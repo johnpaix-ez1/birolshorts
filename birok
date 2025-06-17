@@ -1,0 +1,2561 @@
+
+
+# External APIs
+import google.generativeai as genai
+## UPLOAD OR PASTE LINK OF ANY VIDEO YOU LIKE TO GET TRANSCRIPTS AND CREATE A VIDEO
+   # Clear all variables
+
+
+
+!pip install -U yt-dlp
+
+!sudo rm /usr/local/bin/ffmpeg
+# !cp /home/ubuntu/crewgooglegemini/CAPTACITY/ffmpeg /usr/local/bin/
+# !chmod +x /usr/local/bin/ffmpeg
+
+import os
+
+# # Set the FFMPEG_BINARY environment variable to the location of ffmpeg
+##os.environ['FFMPEG_BINARY'] = '/usr/bin/ffmpeg'
+
+#os.environ['IMAGEMAGICK_BINARY'] = '/usr/bin/convert'
+
+
+# Navigate to your project folder in Drive
+%cd /home/ubuntu/crewgooglegemini/CAPTACITY/captacity
+
+import subprocess
+from datetime import datetime
+from dotenv import load_dotenv
+from unidecode import unidecode
+import shutil
+import requests
+from IPython.display import Audio, display, FileLink
+import uuid
+import shutil
+import urllib.request
+import urllib.parse
+import websocket
+from termcolor import colored
+
+from moviepy.editor import *
+from tqdm.notebook import tqdm
+import shutil
+from moviepy.editor import ImageClip, vfx
+from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
+from moviepy.video.fx.resize import resize  # Import resize for zooming
+from moviepy.video.io.ffmpeg_tools import ffmpeg_extract_subclip
+from moviepy.editor import VideoFileClip, AudioFileClip, concatenate_videoclips, CompositeVideoClip, CompositeAudioClip
+import subprocess
+import tempfile
+from bs4 import BeautifulSoup
+from googleapiclient.discovery import build
+import time
+import requests
+import asyncio
+import ast
+import ssl
+import re
+import json
+import random
+from telegram import Bot
+import torch
+import cv2
+import websocket
+import uuid
+import urllib.request
+import urllib.parse
+from PIL import Image
+import io
+import edge_tts
+from termcolor import colored
+import datetime
+import os
+from websocket import WebSocketConnectionClosedException, WebSocketTimeoutException
+from jsonschema import validate, ValidationError
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain.schema import HumanMessage
+from groq import Groq
+import yt_dlp  # For downloading YouTube videos
+import moviepy.editor as mp
+from datetime import datetime
+#from ultralytics import YOLO
+from urllib.parse import urlparse, unquote
+import numpy as np
+import google.generativeai as genai
+from dotenv import load_dotenv
+from script_generator import generate_script
+from audio_generator import generate_audio
+from transcriber import transcribe_locally
+from moviepy.video.fx.all import fadeout
+from moviepy.audio.fx.all import audio_fadeout
+from pexelsapi.pexels import Pexels
+from pydantic import ValidationError
+from jsonschema import validate
+import wave
+import glob
+from IPython.display import clear_output
+from pydub import AudioSegment
+import segment_parser
+import transcriber
+from text_drawer import (
+    get_text_size_ex,
+    create_text_ex,
+    blur_text_clip,
+    Word,
+)
+
+shadow_cache = {}
+lines_cache = {}
+#from ._init_ import add_captions, fits_frame, calculate_lines, create_shadow, get_font_path, detect_local_whisper
+
+
+# # Groq API setup
+load_dotenv()
+
+# Ensure Gemini API key is set in environment variables
+gemini_api_key = os.getenv("GEMINI_API_KEY")  # Change this to your actual variable name if different
+if gemini_api_key is None:
+    raise ValueError("GEMINI_API_KEY environment variable not set")
+
+
+# --- Define these at the top so ALL functions see them ---
+# Configurations
+ASSET_FOLDER = "/home/ubuntu/crewgooglegemini/PodcastProd/current-podcast-assets"
+SHORTS_FOLDER = "/home/ubuntu/crewgooglegemini/PodcastProd/Comfyuishorts"
+STATIC_LOG_FOLDER = "/home/ubuntu/crewgooglegemini/PodcastProd/static_asset_log"
+SERVER_ADDRESS = "54.80.78.81:8253"
+WORKFLOW_FILE = "/home/ubuntu/crewgooglegemini/PodcastProd/ComfyUIShortsVideoWorkflow.json"  # Place your workflow JSON here
+
+SCRIPT_PATH = "/home/ubuntu/crewgooglegemini/PodcastProd/current-podcast-script.json"
+IMAGE_SRC_FOLDER = "/home/ubuntu/crewgooglegemini/ALL-LORAS/IMAGES/ImageSelect4Vid"
+ASSET_OUT_FOLDER = "/home/ubuntu/crewgooglegemini/PodcastProd/current-podcast-assets"
+ORPHEUS_API_URL = "http://54.80.78.81:5005/v1/audio/speech"
+
+# === PATHS (edit if needed) ===
+BACKGROUND_FOLDER = "/home/ubuntu/crewgooglegemini/PodcastProd/background"
+OUTPUT_FOLDER = "/home/ubuntu/crewgooglegemini/PodcastProd/FINALvideo"
+CUSTOM_FOLDER = "/home/ubuntu/crewgooglegemini/PodcastProd/Comfyuishorts"
+
+
+
+# ---------------------------------------------------------------------------
+# Utility Functions
+# ---------------------------------------------------------------------------
+
+try:
+    import requests
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
+
+def ensure_folder_exists(folder):
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+def validate_json_structure(data, schema):
+    from jsonschema import validate, ValidationError
+    try:
+        validate(instance=data, schema=schema)
+        return True
+    except ValidationError as e:
+        print(f"Validation error: {e}")
+        return False
+
+expected_schema = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "character": {"type": "string"},
+            "line": {"type": "string"}
+        },
+        "required": ["character", "line"]
+    }
+}
+
+def log_transcript(transcript_text, log_path):
+    log_entry = {
+        "transcript": transcript_text,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+    with open(log_path, "a", encoding="utf-8") as log_file:
+        log_file.write(json.dumps(log_entry, indent=4) + "\n\n")
+
+def download_youtube_video(youtube_link, output_path="/content"):
+    output_template = os.path.join(output_path, "%(title).50s-%(id)s.%(ext)s")
+    command = [
+        "yt-dlp",
+        youtube_link,
+        "-o", output_template,
+        "--restrict-filenames",
+        "--max-filesize", "200G"
+    ]
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        print("Error during yt-dlp execution:", result.stderr)
+        return None
+    try:
+        files = [os.path.join(output_path, f) for f in os.listdir(output_path) if os.path.isfile(os.path.join(output_path, f))]
+        if not files:
+            print("No files found in the output directory.")
+            return None
+        latest_file = max(files, key=os.path.getctime)
+        return latest_file
+    except Exception as e:
+        print("Error retrieving the downloaded file:", e)
+        return None
+
+def get_next_link(new_links_file):
+    if not os.path.exists(new_links_file):
+        return None, None
+    with open(new_links_file, 'r') as file:
+        lines = file.readlines()
+    if not lines:
+        return None, None
+    youtube_link = lines[0].strip()
+    return youtube_link, new_links_file
+
+def generate_transcript_with_retries(model, myfile, prompt, retries=10, delay=10):
+    for attempt in range(1, retries+1):
+        try:
+            result = model.generate_content([myfile, prompt])
+            return result
+        except Exception as e:
+            print(f"Attempt {attempt} failed: {e}")
+            if attempt < retries:
+                print(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+            else:
+                raise
+
+def normalize_text(text):
+    return unidecode(text)
+
+# ---------------------------------------------------------------------------
+# Podcast Script Generator
+# ---------------------------------------------------------------------------
+
+def generate_podcast_from_video(transcript):
+    prompt = f"""
+You are a masterful podcast scriptwriter. Transform the transcript below into a **cinematic, emotionally resonant monologue**, voiced by a single human character. Here is the transcript:
+
+{transcript}
+
+🎙️ CHARACTER OPTIONS (choose one, based on tone):
+- MIDDLE_AGED_MAN – warm, sometimes humorous or deeply insightful, steady deep voice, approachable and calm
+- MIDDLE_AGED_WOMAN – nurturing, practical or witty, warm clear voice, expressive and confident
+- OLD_WOMAN – wise, warm, occasionally forgetful, soft gentle voice, caring and comforting presence
+- OLD_MAN – quirky or wise grandpa, thoughtful, gravelly/deep voice, slow deliberate speech, wise yet lovable
+
+🔹 SCRIPT STYLE:
+- Choose **one character** whose voice best suits the mood and message not only MIDDLE_AGED_MAN.
+- Build the script like a wave: calm intro → emotional build → peak insight → soft reflection → thoughtful conclusion.
+- Use **natural, human, conversational style**—not like a recap.
+- Use natural and simple english for a non English person to understand.
+- Do not use words like: unlock, what if, dive, or diving.
+- Avoid visuals. Focus only on the **ideas, stories, and emotional resonance**.
+- Leave **a moment of stillness before each line**—as if the speaker is breathing, thinking.
+- Include relevant **philosophical quotes**, that add value to the script and avoid using quotes that are not relevant to the script.
+- Include **metaphors, analogies, and personal-style reflections** that match the character’s personality.
+- Conclude with a **lesson, insight**, or an ** see you later, or on the next episode message**.
+- If its bible related content, base your naration on the scriptures and also quoting Jesus, God, or the HolySpirit correctly where neccesary.
+- Do not mention the transcript, character’s name/age, or break the fourth wall.
+- Script length: approx. 200–300 words (2–3 min for all combined script)
+
+🔹 OUTPUT FORMAT (STRICT):
+- **Return the final podcast script as a valid JSON array of objects, with a MAXIMUM of 4 lines.**
+- Make sure there is no space at the end of the last word of the last line of the script or any unwanted symbols so that the tts model doesnt not try to read it causing odd sounds.
+- Each line should not be morethan 3 sentences. i dont want the lines too long.
+- Each line should be a rich, expressive, flowing paragraph, not a single short sentence, not too long but just sufficient to combine with the other lines for the whole script.
+- Do not exceed 4 lines in total.
+- Below is just an output structure. you can use any character whose voice best suits the mood and message in the script.
+   
+    **Example output:**
+[
+  {{
+    "character": "OLD_MAN",
+    "line": "This is a long, flowing paragraph that captures the essence of the story, emotion, and message."
+  }},
+  {{
+    "character": "OLD_MAN",
+    "line": "Another, expressive line continuing the narrative and emotional arc."
+  }},
+  {{
+    "character": "OLD_MAN",
+    "line": "Another, expressive line continuing the narrative and emotional arc."
+  }},
+  {{
+    "character": "OLD_MAN",
+    "line": "A thoughtful conclusion, with a philosophical quote and an invitation to subscribe or return."
+  }}
+]
+
+Do not include emotion tags, exclamations, brackets, emojis, or non-JSON elements.
+"""
+
+
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    response = model.generate_content(prompt)
+    content = response.text
+    # Extract JSON from the content using regex
+    json_match = re.search(r'```json\s*(.*?)\s*```', content, re.DOTALL)
+    if json_match:
+        json_str = json_match.group(1)
+    else:
+        json_str = content.strip()
+    try:
+        result = json.loads(json_str)
+        if validate_json_structure(result, expected_schema):
+            script = result
+            for item in script:
+                item["line"] = normalize_text(item["line"])
+            return script
+        else:
+            raise ValueError("JSON validation failed.")
+    except json.JSONDecodeError as e:
+        print(f"JSON decoding error: {e}")
+    return None, None
+
+
+
+KOKORO_MODEL_FILE_PATH = "/home/ubuntu/crewgooglegemini/CAPTACITY/assets/kokoro_models/kokoro-v1.0.onnx"
+KOKORO_VOICES_FILE_PATH = "/home/ubuntu/crewgooglegemini/CAPTACITY/assets/kokoro_models/voices-v1.0.bin"
+
+CHARACTER_KOKORO_VOICE_MAP = {
+    "MIDDLE_AGED_MAN":   {"voice": "am_fenrir",  "speed": 0.85, "lang": "en-us"},
+    "MIDDLE_AGED_WOMAN": {"voice": "af_nicole",  "speed": 0.95, "lang": "en-us"},
+    "OLD_MAN":           {"voice": "bm_george",  "speed": 0.90, "lang": "en-gb"},
+    "OLD_WOMAN":         {"voice": "bf_emma",    "speed": 0.85, "lang": "en-gb"},
+}
+
+def ensure_folder_exists(folder):
+    if not os.path.exists(folder):
+        os.makedirs(folder)
+
+def get_unique_characters(script_data):
+    return list({item["character"].strip().upper() for item in script_data})
+
+def find_and_copy_image(character, dest_folder):
+    char_name = character.strip().upper()
+    files = os.listdir(IMAGE_SRC_FOLDER)
+    candidates = [
+        f for f in files
+        if char_name in unidecode(f).upper() and f.lower().endswith(('.png', '.jpg', '.jpeg'))
+    ]
+    if not candidates:
+        return None
+    selected_file = random.choice(candidates)
+    src_path = os.path.join(IMAGE_SRC_FOLDER, selected_file)
+    dst_path = os.path.join(dest_folder, selected_file)
+    if not os.path.exists(dst_path):
+        try:
+            os.makedirs(dest_folder, exist_ok=True)
+            import shutil
+            shutil.copy(src_path, dst_path)
+        except Exception as e:
+            print(f"Error copying image for {character}: {e}")
+            return None
+    return dst_path
+    
+import soundfile as sf
+
+def send_text_to_kokoro(text, character, line_number, asset_folder):
+    char_upper = character.strip().upper()
+    vmap = CHARACTER_KOKORO_VOICE_MAP.get(char_upper, CHARACTER_KOKORO_VOICE_MAP["MIDDLE_AGED_WOMAN"])
+    voice = vmap["voice"]
+    speed = vmap["speed"]
+    lang = vmap["lang"]
+
+    os.makedirs(asset_folder, exist_ok=True)
+    audio_path = os.path.join(asset_folder, f"{char_upper}_{line_number:03d}.wav")
+
+    try:
+        kokoro = Kokoro(KOKORO_MODEL_FILE_PATH, KOKORO_VOICES_FILE_PATH)
+        samples, sample_rate = kokoro.create(
+            text,
+            voice=voice,
+            speed=speed,
+            lang=lang
+        )
+        sf.write(audio_path, samples, sample_rate)
+        print(f"[Kokoro] Audio generated for {char_upper} line {line_number}: {audio_path}")
+        return audio_path
+    except Exception as e:
+        print(f"[Kokoro ERROR] Failed to generate audio for {char_upper} line {line_number}: {e}")
+        return None
+
+def process_podcast_assets_kokoro():
+    ensure_folder_exists(ASSET_OUT_FOLDER)
+
+    # Step 1: Load script
+    with open(SCRIPT_PATH, "r", encoding="utf-8") as f:
+        script_data = json.load(f)
+    if isinstance(script_data, dict) and "script" in script_data:
+        script_data = script_data["script"]
+
+    # Step 2: Find unique characters and copy their images
+    characters = get_unique_characters(script_data)
+    char_image_map = {}
+    for char in characters:
+        img_path = find_and_copy_image(char, ASSET_OUT_FOLDER)
+        char_image_map[char] = img_path
+        if img_path:
+            print(f"Copied image for {char}: {img_path}")
+        else:
+            print(f"Warning: No image found for {char}")
+
+    # Step 3: For each line, generate audio with correct voice and record order
+    char_audio_map = {char: [] for char in characters}
+    for idx, item in enumerate(script_data):
+        character = item["character"].strip().upper()
+        line = item["line"]
+        print(f"Sending line {idx+1} for {character}: {line[:60]}...")
+        audio_path = send_text_to_kokoro(
+            text=line,
+            character=character,
+            line_number=idx+1,
+            asset_folder=ASSET_OUT_FOLDER
+        )
+        if audio_path:
+            char_audio_map[character].append(audio_path)
+        time.sleep(1)
+    print("Kokoro audio asset generation complete.")
+
+    return {"images": char_image_map, "audio": char_audio_map}
+
+# TEMP_ASSET_FOLDER = "/home/ubuntu/crewgooglegemini/PodcastProd/current-podcast-assets/temp"
+
+# def wait_for_file_stable(filepath, retries=10, interval=1):
+#     last_size = -1
+#     for _ in range(retries):
+#         try:
+#             size = os.path.getsize(filepath)
+#         except FileNotFoundError:
+#             size = -1
+#         if size == last_size and size > 0:
+#             return True
+#         last_size = size
+#         time.sleep(interval)
+#     return False
+
+# def send_text_to_orpheus(text, voice, speed, line_number, character, asset_folder, temp_folder):
+#     """
+#     Sends text to the Orpheus TTS API and writes the resulting WAV file to disk.
+#     TODDLER_GIRL, TODDLER_BOY and OLD_MAN are written to temp_folder, others go to asset_folder directly.
+#     """
+#     payload = {
+#         "input": text,
+#         "model": "orpheus",
+#         "voice": voice,
+#         "response_format": "wav",
+#         "speed": speed
+#     }
+
+#     character_upper = character.strip().upper()
+#     if character_upper in ("TODDLER_GIRL","TODDLER_BOY", "OLD_MAN"):
+#         target_folder = temp_folder
+#     else:
+#         target_folder = asset_folder
+
+#     os.makedirs(target_folder, exist_ok=True)
+#     audio_path = os.path.join(target_folder, f"{character_upper}_{line_number:03d}.wav")
+
+#     try:
+#         response = requests.post(ORPHEUS_API_URL, json=payload, timeout=120)
+#     except requests.RequestException as e:
+#         print(f"[ERROR] Request failed for {character} line {line_number}: {e}")
+#         return None
+
+#     if response.status_code != 200 or not response.content:
+#         print(f"[ERROR] Failed to generate audio for {character} line {line_number}")
+#         print("Response:", response.status_code, response.text)
+#         return None
+
+#     try:
+#         with open(audio_path, "wb") as f:
+#             f.write(response.content)
+#             f.flush()
+#             os.fsync(f.fileno())
+#     except Exception as e:
+#         print(f"[ERROR] Failed to write audio file: {audio_path} - {e}")
+#         return None
+
+#     if not wait_for_file_stable(audio_path, retries=15, interval=0.15):
+#         print(f"[ERROR] Audio file did not stabilize: {audio_path}")
+#         return None
+
+#     time.sleep(1)  # Ensure file is flushed
+#     return audio_path
+
+# def process_podcast_assets():
+#     # Step 0: Ensure asset folders exist
+#     ensure_folder(ASSET_OUT_FOLDER)
+#     ensure_folder(TEMP_ASSET_FOLDER)
+
+#     # Step 1: Load script
+#     with open(SCRIPT_PATH, "r", encoding="utf-8") as f:
+#         script_data = json.load(f)
+#     if isinstance(script_data, dict) and "script" in script_data:
+#         script_data = script_data["script"]
+
+#     # Step 2: Find unique characters and copy their images
+#     characters = get_unique_characters(script_data)
+#     char_image_map = {}
+#     for char in characters:
+#         img_path = find_and_copy_image(char, ASSET_OUT_FOLDER)
+#         char_image_map[char] = img_path
+#         if img_path:
+#             print(f"Copied image for {char}: {img_path}")
+#         else:
+#             print(f"Warning: No image found for {char}")
+
+#     # Step 3: For each line, generate audio with correct voice and record order
+#     char_audio_map = {char: [] for char in characters}
+#     all_audio_files = []
+#     for idx, item in enumerate(script_data):
+#         character = item["character"].strip().upper()
+#         line = item["line"]
+#         vmap = CHARACTER_VOICE_MAP.get(character, {"voice": "tara", "speed": 1.0})
+#         print(f"Sending line {idx+1} for {character}: {line[:60]}...")
+#         audio_path = send_text_to_orpheus(
+#             line,
+#             vmap["voice"],
+#             vmap["speed"],
+#             idx+1,
+#             character,
+#             ASSET_OUT_FOLDER,
+#             TEMP_ASSET_FOLDER
+#         )
+#         if audio_path:
+#             char_audio_map[character].append(audio_path)
+#             all_audio_files.append((idx+1, character, audio_path))
+#         time.sleep(1)
+#     print("Audio asset generation complete.")
+
+#     # Step 4: Modulate TODDLER_GIRL, TODDLER_BOY and OLD_MAN voices in order, move to main asset folder
+#     all_audio_files_sorted = sorted(all_audio_files, key=lambda x: x[0])
+#     for line_num, character, audio_path in all_audio_files_sorted:
+#         char_upper = character.strip().upper()
+#         if char_upper in ("TODDLER_GIRL","TODDLER_BOY", "OLD_MAN"):
+#             basename = os.path.basename(audio_path)
+#             out_path = os.path.join(ASSET_OUT_FOLDER, basename)
+#             print(f"Modulating {char_upper}: {audio_path} -> {out_path}")
+#             try:
+#                 sox_voice_age_transform(
+#                     input_wav_path=audio_path,
+#                     output_wav_path=out_path,
+#                     play_audio=False,
+#                     download_audio=False,
+#                     voice_type=char_upper
+#                 )
+#                 # Optionally delete the temp file after move/modulation
+#                  #os.remove(audio_path)
+#             except Exception as e:
+#                 print(f"[ERROR] SoX modulation failed for {audio_path}: {e}")
+#             time.sleep(2)
+#         else:
+#             # Already in final folder, nothing to do
+#             pass
+
+#     return {"images": char_image_map, "audio": char_audio_map}
+
+def sox_voice_age_transform(
+    input_wav_path,
+    output_wav_path=None,
+    play_audio=False,
+    download_audio=False,
+    voice_type=None
+):
+    import subprocess
+
+    if voice_type is not None:
+        voice_type_upper = voice_type.strip().upper()
+    else:
+        filename = os.path.basename(input_wav_path).lower()
+        if "toddler" in filename:
+            voice_type_upper = "TODDLER_GIRL"
+        elif "bbbbb" in filename or "bbbbbb" in filename:
+            voice_type_upper = "bbbbb"
+        else:
+            print("⚠️ Skipping: input filename must include 'toddler', 'oldman', or 'old', or pass voice_type param.")
+            return None
+
+    if not output_wav_path:
+        base, ext = os.path.splitext(input_wav_path)
+        output_wav_path = f"{base}_sox_{voice_type_upper.lower()}.wav"
+
+    os.makedirs(os.path.dirname(output_wav_path), exist_ok=True)
+
+    if voice_type_upper in ("TODDLER_GIRL", "TODDLER_BOY"):
+        sox_cmd = [
+            "sox", input_wav_path, output_wav_path,
+            "pitch", "200", "tempo", "0.95",
+            "equalizer", "8000", "1.0q", "+1",
+            "equalizer", "250", "1.0q", "-14",
+            "treble", "+10", "bass", "-12",
+            "gain", "-6",
+            "compand", "0.3,1", "6:-65,-55,-20", "-8", "-20", "0.2",
+            "norm", "-4"
+        ]
+    elif voice_type_upper == "OLD_MAN":
+        sox_cmd = [
+            "sox", input_wav_path, output_wav_path,
+            "pitch", "-300", "tempo", "0.83",
+            "equalizer", "1800", "1.0q", "-4",
+            "equalizer", "3500", "1.0q", "+3",
+            "treble", "-1", "bass", "-5",
+            "gain", "0.3",
+            "compand", "0.5,1", "6:-65,-5,-20", "-6", "-25", "0.2",
+            "norm", "-2"
+        ]
+    else:
+        print("⚠️ Skipping: voice_type must be 'TODDLER_GIRL', 'TODDLER_BOY', or 'OLD_MAN'.")
+        return None
+
+    print(f"🔧 Running SoX command for {voice_type_upper} voice:\n", " ".join(sox_cmd))
+    subprocess.run(sox_cmd, check=True)
+
+    if play_audio:
+        display(Audio(output_wav_path))
+    if download_audio:
+        display(FileLink(output_wav_path))
+
+    return output_wav_path
+
+
+def comfyui_upload_file(local_path):
+    """Uploads a file to ComfyUI server via HTTP API and returns filename/subfolder for workflow."""
+    url = f"http://{SERVER_ADDRESS}/upload/image"
+    filename = os.path.basename(local_path)
+    files = {'image': (filename, open(local_path, 'rb'))}
+    data = {'overwrite': 'true'}
+    if HAS_REQUESTS:
+        resp = requests.post(url, files=files, data=data, timeout=30)
+        resp.raise_for_status()
+        return resp.json()
+    else:
+        # fallback to urllib
+        import mimetypes
+        boundary = "----WebKitFormBoundary" + os.urandom(16).hex()
+        body = []
+        body.append(f"--{boundary}")
+        body.append(f'Content-Disposition: form-data; name="overwrite"\r\n')
+        body.append("true")
+        body.append(f"--{boundary}")
+        content_type = mimetypes.guess_type(local_path)[0] or "application/octet-stream"
+        body.append(f'Content-Disposition: form-data; name="image"; filename="{filename}"')
+        body.append(f"Content-Type: {content_type}\r\n")
+        with open(local_path, "rb") as f:
+            filedata = f.read()
+        body = [x if isinstance(x, bytes) else x.encode("utf-8") for x in body]
+        body.insert(4, filedata)
+        body.append(f"--{boundary}--".encode("utf-8"))
+        final_body = b"\r\n".join(body)
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Content-Length": str(len(final_body)),
+        }
+        req = urllib.request.Request(url, data=final_body, headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=30) as response:
+            resp_json = json.loads(response.read().decode())
+            return resp_json
+
+def get_audio_files():
+    files = [f for f in os.listdir(ASSET_FOLDER) if f.lower().endswith('.wav')]
+    files_sorted = sorted(
+        files,
+        key=lambda x: int(''.join(filter(str.isdigit, x.split('_')[-1].split('.')[0]))) if ''.join(filter(str.isdigit, x.split('_')[-1].split('.')[0])) else 9999
+    )
+    return files_sorted
+
+def find_matching_image(audio_filename):
+    char_type = audio_filename.split('_')[0].lower()
+    candidates = [
+        f for f in os.listdir(ASSET_FOLDER)
+        if f.lower().endswith('.png') and char_type in f.lower()
+    ]
+    if candidates:
+        return sorted(candidates)[0]
+    return None
+
+def load_workflow(image_upload_resp, audio_upload_resp):
+    """Patch workflow JSON with server-accepted image/audio file references."""
+    with open(WORKFLOW_FILE, "r", encoding="utf-8") as f:
+        workflow = json.load(f)
+    # Patch workflow
+    for node in workflow.values():
+        if node['class_type'] == 'LoadImage' and image_upload_resp:
+            img_name = image_upload_resp['name']
+            if image_upload_resp.get('subfolder'):
+                img_name = f"{image_upload_resp['subfolder']}/{img_name}"
+            node['inputs']['image'] = img_name
+        if node['class_type'] in ('VHS_LoadAudioUpload', 'LoadAudio') and audio_upload_resp:
+            aud_name = audio_upload_resp['name']
+            if audio_upload_resp.get('subfolder'):
+                aud_name = f"{audio_upload_resp['subfolder']}/{aud_name}"
+            node['inputs']['audio'] = aud_name
+    return workflow
+
+def queue_prompt(workflow, client_id):
+    p = {"prompt": workflow, "client_id": client_id}
+    data = json.dumps(p, indent=4).encode("utf-8")
+    req = urllib.request.Request(f"http://{SERVER_ADDRESS}/prompt", data=data, headers={'Content-Type': 'application/json'})
+    try:
+        response = json.loads(urllib.request.urlopen(req).read())
+        return response
+    except Exception as e:
+        print(colored(f"Error sending prompt: {e}", "red"))
+        return {}
+
+def get_history(prompt_id):
+    with urllib.request.urlopen(f"http://{SERVER_ADDRESS}/history/{prompt_id}") as response:
+        return json.loads(response.read())
+
+
+
+def download_video_from_history(prompt_id, out_folder, audio_filename):
+    history = get_history(prompt_id)[prompt_id]
+    print("==== Workflow Node Outputs ====")
+    for node_id, node_output in history['outputs'].items():
+        print(f"Node {node_id}: keys={list(node_output.keys())}")
+        print(node_output)
+    print("===============================")
+
+    # Try 'videos', 'filenames', 'gifs' in order
+    for key in ['videos', 'filenames', 'gifs']:
+        for node_id, node_output in history['outputs'].items():
+            if key in node_output:
+                entries = node_output[key]
+                for entry in entries:
+                    if key == 'videos':
+                        filename = entry['filename']
+                        subfolder = entry.get('subfolder', '')
+                    elif key == 'filenames':
+                        filename = entry if isinstance(entry, str) else entry.get('filename')
+                        subfolder = ''
+                    elif key == 'gifs':
+                        filename = entry.get("filename")
+                        subfolder = entry.get('subfolder', '')
+                    else:
+                        continue
+
+                    if not filename:
+                        continue
+
+                    url_values = urllib.parse.urlencode({
+                        "filename": filename,
+                        "subfolder": subfolder,
+                        "type": "output"
+                    })
+                    video_url = f"http://{SERVER_ADDRESS}/view?{url_values}"
+                    print(f"Fetching video from {video_url}")
+                    try:
+                        video_data = urllib.request.urlopen(video_url).read()
+                    except Exception as e:
+                        print(f"Failed to fetch video from server: {e}")
+                        continue
+
+                    temp_video_path = os.path.join(out_folder, filename)
+                    with open(temp_video_path, "wb") as f:
+                        f.write(video_data)
+                    audio_base = os.path.splitext(audio_filename)[0]
+                    final_video_path = os.path.join(out_folder, audio_base + ".mp4")
+                    os.rename(temp_video_path, final_video_path)
+                    print(f"Downloaded video via '{key}': {final_video_path}")
+                    return final_video_path
+
+    print("No video found in workflow history outputs.")
+    return None
+
+def move_to_static_log(files):
+    ensure_folder_exists(STATIC_LOG_FOLDER)
+    for file in files:
+        src = os.path.join(ASSET_FOLDER, file)
+        dst = os.path.join(STATIC_LOG_FOLDER, file)
+        if os.path.exists(src):
+            os.rename(src, dst)
+
+def get_image_files():
+    image_extensions = {'.png', '.jpg', '.jpeg', '.gif'}
+    files = []
+    for f in os.listdir(ASSET_FOLDER):
+        ext = os.path.splitext(f)[1].lower()
+        if ext in image_extensions and os.path.isfile(os.path.join(ASSET_FOLDER, f)):
+            files.append(f)
+    return files
+
+def process_podcast_assets_comfyui():
+    ensure_folder_exists(SHORTS_FOLDER)
+    ensure_folder_exists(STATIC_LOG_FOLDER)
+    client_id = str(uuid.uuid4())
+    audio_files = get_audio_files()
+    for audio_file in audio_files:
+        audio_path = os.path.join(ASSET_FOLDER, audio_file)
+        image_file = find_matching_image(audio_file)
+        if not image_file:
+            print(colored(f"No matching image found for {audio_file}. Skipping.", "yellow"))
+            continue
+
+        # Upload both files
+        audio_upload_resp = comfyui_upload_file(audio_path)
+        image_upload_resp = comfyui_upload_file(os.path.join(ASSET_FOLDER, image_file))
+
+        print(colored(f"Processing audio: {audio_file} with image: {image_file}", "cyan"))
+        workflow = load_workflow(image_upload_resp, audio_upload_resp)
+        resp = queue_prompt(workflow, client_id)
+        if not resp or 'prompt_id' not in resp:
+            print(colored(f"Failed to queue workflow for {audio_file}. Skipping.", "red"))
+            continue
+        prompt_id = resp['prompt_id']
+
+        print(colored(f"Waiting for workflow result for prompt_id: {prompt_id}", "green"))
+        success, tries = False, 0
+        while not success and tries < 60:
+            try:
+                history = get_history(prompt_id)
+                if 'outputs' in history[prompt_id]:
+#                    print(json.dumps(history[prompt_id]['outputs'], indent=2))
+                    for node_output in history[prompt_id]['outputs'].values():
+                        if (
+                            ('videos' in node_output and node_output['videos']) or
+                            ('filenames' in node_output and node_output['filenames']) or
+                            ('images' in node_output and node_output['images']) or
+                            ('files' in node_output and node_output['files']) or
+                            ('gifs' in node_output and node_output['gifs'])
+                        ):
+                            success = True
+                            break
+                if not success:
+                    time.sleep(5)
+                    tries += 1
+            except Exception as e:
+                print(colored(f"Waiting for output... ({e})", "yellow"))
+                time.sleep(15)
+                tries += 1
+
+        if not success:
+            print(colored(f"No video output for {audio_file} after waiting. Skipping.", "red"))
+            continue
+
+        out_video = download_video_from_history(prompt_id, SHORTS_FOLDER, audio_file)
+        if out_video:
+            print(colored(f"Video saved: {out_video}", "green"))
+            move_to_static_log([audio_file])  # Only move audio file here
+        else:
+            print(colored(f"Failed to download video for {audio_file}", "red"))
+
+    # After all audio files processed, move all images
+    image_files = get_image_files()  # Implement to list all images in ASSET_FOLDER
+    move_to_static_log(image_files)
+
+    print(colored("All podcast assets processed.", "magenta"))
+
+
+def get_sorted_shorts(folder):
+    import re
+    def index_key(filename):
+        match = re.search(r'_(\d{3})', filename)
+        return int(match.group(1)) if match else float('inf')
+    try:
+        shorts = [f for f in os.listdir(folder) if f.endswith(".mp4")]
+        shorts.sort(key=index_key)
+        return shorts
+    except Exception as e:
+        print(f"[ERROR] Could not list shorts in {folder}: {e}")
+        return []
+
+def find_first_png(folder):
+    try:
+        for f in os.listdir(folder):
+            if f.lower().endswith('.png') and os.path.isfile(os.path.join(folder, f)):
+                return os.path.join(folder, f)
+        raise FileNotFoundError(f"No PNG found in {folder}")
+    except Exception as e:
+        print(f"[ERROR] Could not list PNGs in {folder}: {e}")
+        raise
+
+def create_ffmpeg_concat_list(shorts_folder, shorts_sorted, concat_list_path):
+    with open(concat_list_path, "w") as f:
+        for short in shorts_sorted:
+            full_path = os.path.abspath(os.path.join(shorts_folder, short))
+            f.write(f"file '{full_path}'\n")
+    print(f"[INFO] Created ffmpeg concat list at: {concat_list_path}")
+
+def concatenate_videos(video_list_file, output_path):
+    """
+    Concatenate videos in the list using ffmpeg (re-encoded for filter compatibility).
+    """
+    ffmpeg_cmd = [
+        "ffmpeg",
+        "-f", "concat",
+        "-safe", "0",
+        "-i", video_list_file,
+        "-c:v", "libx264",
+        "-crf", "18",
+        "-preset", "fast",
+        "-c:a", "aac",
+        "-y",
+        output_path
+    ]
+    print(f"[INFO] Running ffmpeg concat: {' '.join(ffmpeg_cmd)}")
+    result = subprocess.run(ffmpeg_cmd, capture_output=True)
+    if result.returncode == 0:
+        print(f"[SUCCESS] Concatenated video created at {output_path}")
+        return True
+    else:
+        print(f"[ERROR] Concatenation failed: {result.stderr.decode('utf-8', errors='ignore')}")
+        return False
+
+def concatenate_and_overlay(shorts_folder, background_folder, output_folder):
+    print("[INFO] Starting concatenate_and_overlay process...")
+
+    # Prepare file paths
+    shorts_sorted = get_sorted_shorts(shorts_folder)
+    if not shorts_sorted:
+        print("[ERROR] No shorts found to process.")
+        return False
+
+    concat_list_path = os.path.join(output_folder, "shorts_concat_list.txt")
+    create_ffmpeg_concat_list(shorts_folder, shorts_sorted, concat_list_path)
+
+    intermediate_path = os.path.join(output_folder, "concatenated_video.mp4")
+    final_output_path = os.path.join(output_folder, "final_youtube_short.mp4")
+    try:
+        bg_image = find_first_png(background_folder)
+    except Exception as e:
+        print(f"[ERROR] No background image found: {e}")
+        return False
+
+    # Step 1: Concatenate
+    if not concatenate_videos(concat_list_path, intermediate_path):
+        print("[ERROR] Video concatenation failed.")
+        return False
+
+    # Step 2: Overlay the video on the background
+    ffmpeg_overlay_cmd = [
+        "ffmpeg",
+        "-i", intermediate_path,      # Input 0: concatenated video
+        "-i", bg_image,               # Input 1: background image
+        "-filter_complex",
+        (
+            "color=black:s=720x1280[base];"
+            "[base][0:v]overlay=0:0[tmp];"
+            "[1:v]scale=720:430,boxblur=50:1[bg_processed];"
+            "[tmp][bg_processed]overlay=x=0:y=850[outv]"
+        ),
+        "-map", "[outv]",             # Map the video output from filter_complex
+        "-map", "0:a?",               # Map audio from input 0 (concatenated video)
+        "-c:v", "libx264", "-crf", "18", "-preset", "fast",
+        "-shortest",                  # Ensure output duration matches the shortest of video/audio streams
+        "-y", final_output_path
+    ]
+    print(f"[INFO] Executing ffmpeg overlay command: {' '.join(ffmpeg_overlay_cmd)}")
+
+    try:
+        process = subprocess.Popen(ffmpeg_overlay_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = process.communicate()
+
+        if process.returncode == 0:
+            print(f"[SUCCESS] Video overlay completed. Final video saved to: {final_output_path}")
+            if os.path.exists(final_output_path):
+                print(f"[INFO] File size: {os.path.getsize(final_output_path)} bytes")
+            else:
+                print(f"[WARNING] Output file {final_output_path} not found after ffmpeg command, though ffmpeg reported success.")
+            return True
+        else:
+            print(f"[ERROR] ffmpeg overlay command failed with return code {process.returncode}")
+            print(f"[ERROR] ffmpeg stdout:\n{stdout.decode('utf-8', errors='ignore')}")
+            print(f"[ERROR] ffmpeg stderr:\n{stderr.decode('utf-8', errors='ignore')}")
+            return False
+    except FileNotFoundError:
+        print("[ERROR] ffmpeg command not found. Please ensure ffmpeg is installed and in your system's PATH.")
+        return False
+    except Exception as e:
+        print(f"[ERROR] An unexpected error occurred during ffmpeg execution: {e}")
+        return False
+    finally:
+        # Clean up intermediate file list (optionally remove intermediate video)
+        if os.path.exists(concat_list_path):
+            os.remove(concat_list_path)
+        # Uncomment below to remove intermediate video after processing
+        # if os.path.exists(intermediate_path):
+        #     os.remove(intermediate_path)
+
+def get_most_recent_video(folder, extensions=(".mp4", ".mov", ".mkv", ".avi")):
+    """
+    Returns the full path to the most recently modified video file in the folder,
+    considering the given file extensions.
+    """
+    files = []
+    for ext in extensions:
+        files.extend(glob.glob(os.path.join(folder, f"*{ext}")))
+    if not files:
+        print(f"[ERROR] No video files found in {folder} with extensions {extensions}")
+        return None
+    most_recent = max(files, key=os.path.getmtime)
+    print(f"[INFO] Most recent video found: {most_recent}")
+    return most_recent
+
+def transcribe_video_with_whisper_auto(folder_with_videos, output_dir, model="base"):
+    """
+    Finds the most recent video in the folder, extracts audio, transcribes with local Whisper,
+    and saves a TXT in a transcripts subfolder of output_dir (always overwrites).
+    Returns the path to the transcription file, or None on error.
+    """
+    video_path = get_most_recent_video(folder_with_videos)
+    if not video_path:
+        return None
+
+    # 1. Extract clean mono audio at 16kHz
+    audio_path = os.path.join(output_dir, "transcript_audio.wav")
+    ffmpeg_cmd = [
+        "ffmpeg",
+        "-i", video_path,
+        "-ac", "1",
+        "-ar", "16000",
+        "-vn",
+        "-y",
+        audio_path
+    ]
+    print(f"[INFO] Extracting audio: {' '.join(ffmpeg_cmd)}")
+    result = subprocess.run(ffmpeg_cmd, capture_output=True)
+    if result.returncode != 0:
+        print(f"[ERROR] Audio extraction failed: {result.stderr.decode('utf-8', errors='ignore')}")
+        return None
+
+    # 2. Transcribe audio with local Whisper
+    print("[INFO] Transcribing audio with local Whisper...")
+    transcription = transcribe_locally(audio_path)
+    print("[INFO] Transcription completed.")
+
+    # 3. Save transcript to a text file
+    transcripts_folder = os.path.join(output_dir, "transcripts")
+    ensure_folder_exists(transcripts_folder)
+
+    base_name = os.path.basename(audio_path).rsplit(".", 1)[0]
+    transcript_filename = os.path.join(transcripts_folder, f"{base_name}_transcription.txt")
+
+    try:
+        with open(transcript_filename, "w", encoding="utf-8") as f:
+            if isinstance(transcription, list):
+                # list of segments
+                for segment in transcription:
+                    # serialize 'words' to JSON-friendly
+                    words_json = json.dumps(
+                        segment.get("words", []),
+                        default=lambda x: float(x) if isinstance(x, np.floating) else x
+                    )
+                    start = segment.get("start", "")
+                    end   = segment.get("end", "")
+                    text  = segment.get("text", "").replace("\n", " ")
+                    f.write(f"{start}\t{end}\t{text}\t{words_json}\n")
+            else:
+                # plain string
+                f.write(transcription)
+    except Exception as e:
+        print(f"[ERROR] Failed to write transcription file: {e}")
+        return None
+
+    print(f"[SUCCESS] Transcription saved to {transcript_filename}")
+    return transcript_filename
+
+#START OF CAPTIONS FUNCTIONS
+
+def fits_frame(line_count, font, font_size, stroke_width, frame_width):
+    def fit_function(text):
+        lines = calculate_lines(
+            text,
+            font,
+            font_size,
+            stroke_width,
+            frame_width
+        )
+        return len(lines["lines"]) <= line_count
+    return fit_function
+
+def calculate_lines(text, font, font_size, stroke_width, frame_width):
+    global lines_cache
+
+    arg_hash = hash((text, font, font_size, stroke_width, frame_width))
+
+    if arg_hash in lines_cache:
+        return lines_cache[arg_hash]
+
+    lines = []
+
+    line_to_draw = None
+    line = ""
+    words = text.split()
+    word_index = 0
+    total_height = 0
+    while word_index < len(words):
+        word = words[word_index]
+        line += word + " "
+        text_size = get_text_size_ex(line.strip(), font, font_size, stroke_width)
+        text_width = text_size[0]
+        line_height = text_size[1]
+
+        if text_width < frame_width:
+            line_to_draw = {
+                "text": line.strip(),
+                "height": line_height,
+            }
+            word_index += 1
+        else:
+            if not line_to_draw:
+                print(f"NOTICE: Word '{line.strip()}' is too long for the frame!")
+                line_to_draw = {
+                    "text": line.strip(),
+                    "height": line_height,
+                }
+                word_index += 1
+
+            lines.append(line_to_draw)
+            total_height += line_height
+            line_to_draw = None
+            line = ""
+
+    if line_to_draw:
+        lines.append(line_to_draw)
+        total_height += line_height
+
+    data = {
+        "lines": lines,
+        "height": total_height,
+    }
+
+    lines_cache[arg_hash] = data
+
+    return data
+
+def ffmpeg(command):
+    return subprocess.run(command, capture_output=True)
+
+def create_shadow(text: str, font_size: int, font: str, blur_radius: float, opacity: float=1.0):
+    global shadow_cache
+
+    arg_hash = hash((text, font_size, font, blur_radius, opacity))
+
+    if arg_hash in shadow_cache:
+        return shadow_cache[arg_hash].copy()
+
+    shadow = create_text_ex(text, font_size, "black", font, opacity=opacity)
+    shadow = blur_text_clip(shadow, int(font_size*blur_radius))
+
+    shadow_cache[arg_hash] = shadow.copy()
+
+    return shadow
+
+# def get_font_path(font):
+#     if os.path.exists(font):
+#         return font
+
+#     dirname = os.path.dirname(__file__)
+#     font = os.path.join(dirname, "assets", "fonts", font)
+
+#     if not os.path.exists(font):
+#         raise FileNotFoundError(f"Font '{font}' not found")
+
+#     return font
+
+def get_font_path(font):
+    # Check if Font Exists Directly:
+    if os.path.exists(font):
+        return font
+
+    # Get the current working directory
+    dirname = os.path.abspath('')
+
+    # Search in Assets Folder:
+    font = os.path.join(dirname, "assets", "fonts", font)
+
+    if not os.path.exists(font):
+        raise FileNotFoundError(f"Font '{font}' not found")
+
+    return font
+
+
+def add_captions(
+    video_file,
+    output_file = "with_transcript.mp4",
+
+    font = "Bangers-Regular.ttf",
+    font_size = 100,
+    font_color = "yellow",
+
+    stroke_width = 3,
+    stroke_color = "black",
+
+    highlight_current_word = True,
+    word_highlight_color = "red",
+
+    line_count = 2,
+    fit_function = None,
+
+    padding = 30,
+    position = ("center", "center"), # TODO: Implement this
+
+    shadow_strength = 1.0,
+    shadow_blur = 0.1,
+
+    print_info = False,
+
+    initial_prompt = None,
+    segments = None,
+
+):
+    _start_time = time.time()
+
+    font = get_font_path(font)
+
+
+    if print_info:
+        print("Generating video elements...")
+
+    # Open the video file
+    video = VideoFileClip(video_file)
+    text_bbox_width = video.w-padding*2
+    clips = [video]
+
+    captions = segment_parser.parse(
+        segments=segments,
+        fit_function=fit_function if fit_function else fits_frame(
+            line_count,
+            font,
+            font_size,
+            stroke_width,
+            text_bbox_width,
+        ),
+    )
+
+    for caption in captions:
+        captions_to_draw = []
+        if highlight_current_word:
+            for i, word in enumerate(caption["words"]):
+                if i+1 < len(caption["words"]):
+                    end = caption["words"][i+1]["start"]
+                else:
+                    end = word["end"]
+
+                captions_to_draw.append({
+                    "text": caption["text"],
+                    "start": word["start"],
+                    "end": end,
+                })
+        else:
+            captions_to_draw.append(caption)
+
+        for current_index, caption in enumerate(captions_to_draw):
+            line_data = calculate_lines(caption["text"], font, font_size, stroke_width, text_bbox_width)
+
+            #text_y_offset = video.h // 2 - line_data["height"] // 2
+            #original above
+
+
+            #    # Base Y position from bottom with padding
+            base_y_position = video.h - padding
+            ## Calculate total height for all lines
+            total_height = line_data["height"]
+            # Adjust Y offset to pull it up a little if needed (e.g., by 20 pixels)
+            text_y_offset = base_y_position - total_height - 170  # Adjust '20' as needed for spacing
+
+
+
+            index = 0
+            for line in line_data["lines"]:
+                pos = ("center", text_y_offset)
+                #pos = ("center", video.h - padding - line_data["height"])
+
+
+                words = line["text"].split()
+                word_list = []
+                for w in words:
+                    word_obj = Word(w)
+                    if highlight_current_word and index == current_index:
+                        word_obj.set_color(word_highlight_color)
+                    index += 1
+                    word_list.append(word_obj)
+
+                # Create shadow
+                shadow_left = shadow_strength
+                while shadow_left >= 1:
+                    shadow_left -= 1
+                    shadow = create_shadow(line["text"], font_size, font, shadow_blur, opacity=1)
+                    shadow = shadow.set_start(caption["start"])
+                    shadow = shadow.set_duration(caption["end"] - caption["start"])
+                    shadow = shadow.set_position(pos)
+                    clips.append(shadow)
+
+                if shadow_left > 0:
+                    shadow = create_shadow(line["text"], font_size, font, shadow_blur, opacity=shadow_left)
+                    shadow = shadow.set_start(caption["start"])
+                    shadow = shadow.set_duration(caption["end"] - caption["start"])
+                    shadow = shadow.set_position(pos)
+                    clips.append(shadow)
+
+                # Create text
+                text = create_text_ex(word_list, font_size, font_color, font, stroke_color=stroke_color, stroke_width=stroke_width)
+                text = text.set_start(caption["start"])
+                text = text.set_duration(caption["end"] - caption["start"])
+                text = text.set_position(pos)
+                clips.append(text)
+
+                text_y_offset += line["height"]
+
+    end_time = time.time()
+    generation_time = end_time - _start_time
+
+    if print_info:
+        print(f"Generated in {generation_time//60:02.0f}:{generation_time%60:02.0f} ({len(clips)} clips)")
+
+    if print_info:
+        print("Rendering video...")
+
+    video_with_text = CompositeVideoClip(clips)
+
+    # video_with_text.write_videofile(
+    #     filename=output_file,
+    #     codec="h264_nvenc",  # Use NVIDIA NVENC for H.264 encoding
+    #     fps=30,
+    #     threads=2,  # Let FFmpeg decide the number of threads
+    #     logger="bar" if print_info else None,
+    #     ffmpeg_params=[
+    #         "-preset", "slow",      # Use 'medium' for a balance between speed and quality
+    #         "-b:v", "3500k",          # Set target bitrate to 2500 kbps (2.5 Mbps) for good quality
+    #         "-maxrate:v", "4000k",    # Maximum bitrate set to 2500 kbps
+    #         "-bufsize:v", "8000k",
+    #         "-crf", "23",
+    #         "-pix_fmt", "yuv420p"                        # Buffer size (2x maxrate is a good rule of thumb)
+    #     ]
+    # )
+
+
+    video_with_text.write_videofile(
+    filename=output_file,
+    codec="libx264",
+    fps=30,
+    threads=6,
+    #logger="bar" if print_info else None,
+    logger=None,
+    ffmpeg_params=[
+        "-preset", "slow",
+        "-crf", "23",
+        "-bufsize", "8000k",
+        "-maxrate", "4000k",
+        "-pix_fmt", "yuv420p"
+    ]
+)
+
+
+
+    end_time = time.time()
+    total_time = end_time - _start_time
+    render_time = total_time - generation_time
+
+    if print_info:
+        print(f"Generated in {generation_time//60:02.0f}:{generation_time%60:02.0f}")
+        print(f"Rendered in {render_time//60:02.0f}:{render_time%60:02.0f}")
+        print(f"Done in {total_time//60:02.0f}:{total_time%60:02.0f}")
+
+def make_safe_filename(name):
+    # Replace any character that is not alphanumeric, a hyphen, or underscore with an underscore
+    return re.sub(r'[^A-Za-z0-9-_]', '_', name)
+
+
+def load_video_segments(transcript_folder):
+    transcript_files = [f for f in os.listdir(transcript_folder) if f.endswith('_transcription.txt')]
+
+    if not transcript_files:
+        raise FileNotFoundError("No transcript files found in the specified folder.")
+
+    transcript_filename = os.path.join(transcript_folder, sorted(transcript_files)[-1])
+
+    segments = []
+
+    with open(transcript_filename, 'r') as f:
+        for line in f:
+            #print("Reading line:", line)  # This will show you each line being read
+
+            match = re.match(r'(\d+\.\d+)\s+(\d+\.\d+)\s+(.*?)\s+(\[.*\])$', line.strip())
+            if match:
+                start_time, end_time, text, words_str = match.groups()
+
+                try:
+                    # Safely evaluate words_str using ast.literal_eval
+                    words = ast.literal_eval(words_str)
+
+                    # Ensure words are properly formatted (if necessary)
+                    if not isinstance(words, list):
+                        raise ValueError(f"Expected a list but got {type(words)}")
+
+                except Exception as e:
+                    print(f"Error parsing words for segment: {text}. Exception: {e}")
+                    words = []  # Fallback to an empty list if parsing fails
+
+                segments.append({
+                    'start': float(start_time),
+                    'end': float(end_time),
+                    'text': text,
+                    'words': words,
+                })
+
+    print(f"Loaded {len(segments)} segments from {transcript_filename}.")
+    return segments
+
+
+def get_random_endscreen(endscreen_folder_path):
+    """Pick a random endscreen .mp4 from the given folder."""
+    if not os.path.isdir(endscreen_folder_path):
+        print(f"[ERROR] Endscreen folder not found: {endscreen_folder_path}")
+        return None
+    mp4_files = [f for f in os.listdir(endscreen_folder_path) if f.lower().endswith('.mp4')]
+    if not mp4_files:
+        print(f"[INFO] No .mp4 endscreen files found in {endscreen_folder_path}.")
+        return None
+    selected_file = random.choice(mp4_files)
+    full_path = os.path.join(endscreen_folder_path, selected_file)
+    print(f"[INFO] Randomly selected endscreen: {full_path}")
+    return full_path
+
+def append_endscreen_to_video(main_video_path, endscreen_video_path, final_output_path, target_width=720, target_height=1280):
+    """
+    Appends one endscreen video to the main video, re-encoding as needed to ensure compatibility.
+    Both videos will be scaled and padded to target_width x target_height before concatenation.
+    """
+    import os
+    import subprocess
+
+    if not os.path.exists(main_video_path):
+        print(f"[ERROR] Main video not found: {main_video_path}")
+        return False
+    if not os.path.exists(endscreen_video_path):
+        print(f"[ERROR] Endscreen video not found: {endscreen_video_path}")
+        return False
+
+    filter_complex = (
+        f"[0:v]scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,"
+        f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:color=black,"
+        f"format=yuv420p[v0];"
+        f"[1:v]scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,"
+        f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2:color=black,"
+        f"format=yuv420p[v1];"
+        f"[0:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a0];"
+        f"[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo[a1];"
+        f"[v0][a0][v1][a1]concat=n=2:v=1:a=1[outv][outa]"
+    )
+    ffmpeg_cmd = [
+        "ffmpeg",
+        "-i", main_video_path,
+        "-i", endscreen_video_path,
+        "-filter_complex", filter_complex,
+        "-map", "[outv]",
+        "-map", "[outa]",
+        "-c:v", "libx264", "-crf", "23", "-preset", "medium",
+        "-c:a", "aac", "-b:a", "192k",
+        "-movflags", "+faststart",
+        "-y", final_output_path
+    ]
+    print(f"[INFO] Running FFmpeg to append endscreen: {' '.join(ffmpeg_cmd)}")
+    result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+    if result.returncode == 0 and os.path.exists(final_output_path):
+        print(f"[SUCCESS] Video with endscreen saved to: {final_output_path}")
+        return True
+    else:
+        print(f"[ERROR] FFmpeg failed to append endscreen.")
+        print(f"FFmpeg stdout:\n{result.stdout}")
+        print(f"FFmpeg stderr:\n{result.stderr}")
+        return False
+
+def extract_json_from_gemini_response(response_text):
+    json_match = re.search(r"```json\s*([\s\S]*?)\s*```", response_text)
+    if json_match:
+        json_str = json_match.group(1).strip()
+    else:
+        curly_match = re.search(r"({[\s\S]*})", response_text)
+        if curly_match:
+            json_str = curly_match.group(1).strip()
+        else:
+            json_str = response_text.strip()
+    return json_str
+
+def validate_gemini_transcript_json(data):
+    from jsonschema import validate
+    schema = {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "transcript": {"type": "string"}
+        },
+        "required": ["title", "transcript"]
+    }
+    validate(instance=data, schema=schema)
+    return True
+
+def parse_gemini_transcript_response(response_text):
+    json_str = extract_json_from_gemini_response(response_text)
+    try:
+        data = json.loads(json_str)
+        validate_gemini_transcript_json(data)
+        return data["title"], data["transcript"]
+    except Exception as e:
+        print(f"[Gemini Transcript Parser] Failed to parse or validate JSON: {e}\nRaw string: {json_str[:200]}")
+        return None, None
+
+
+def step_5g_upload_to_google_drive():
+    FINAL_VIDEO_DIR = '/home/ubuntu/crewgooglegemini/PodcastProd/FINALvideo'
+    TRANSCRIPT_PATH = '/home/ubuntu/crewgooglegemini/PodcastProd/current-podcast-script.json'
+    THUMBNAIL_DIR = '/home/ubuntu/crewgooglegemini/CAPTACITY/assets/thumbnails'
+
+    # Find latest video
+    video_files = [f for f in os.listdir(FINAL_VIDEO_DIR) if f.endswith(".mp4")]
+    if not video_files:
+        print("No video files found.")
+        return
+    latest_video_file = max(video_files, key=lambda f: os.path.getmtime(os.path.join(FINAL_VIDEO_DIR, f)))
+    video_path = os.path.join(FINAL_VIDEO_DIR, latest_video_file)
+    video_title = os.path.splitext(latest_video_file)[0]
+
+    # Load script from JSON and extract only the "line" text
+    if not os.path.exists(TRANSCRIPT_PATH):
+        print(f"Transcript log file {TRANSCRIPT_PATH} does not exist.")
+        return
+
+    with open(TRANSCRIPT_PATH, 'r', encoding='utf-8') as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            print(f"Transcript file {TRANSCRIPT_PATH} is not valid JSON.")
+            return
+
+    # Extract just the text from each "line" in the list
+    if isinstance(data, list):
+        script_text = '\n'.join(entry['line'] for entry in data if 'line' in entry)
+    else:
+        script_text = ''
+
+    # Create the transcript file as a .txt
+    transcript_filename = os.path.join(FINAL_VIDEO_DIR, f"{video_title}_transcript.txt")
+    transcript_text = (
+        f"Title: {video_title}\n\n"
+        f"Transcript:\n{script_text}"
+    )
+    with open(transcript_filename, 'w', encoding='utf-8') as tf:
+        tf.write(transcript_text)
+
+    # Upload video to Google Drive
+    print(f"Uploading video: {video_path}")
+    video_upload_command = [
+        'rclone', 'copy', video_path, 'mygdrive:/YouTubevids/', '--progress'
+    ]
+    subprocess.run(video_upload_command)
+    print(f"Uploaded video: {latest_video_file}")
+
+    # Upload transcript to Google Drive
+    print(f"Uploading transcript: {transcript_filename}")
+    transcript_upload_command = [
+        'rclone', 'copy', transcript_filename, 'mygdrive:/YouTubevids/', '--progress'
+    ]
+    subprocess.run(transcript_upload_command)
+    print(f"Uploaded transcript: {transcript_filename}")
+
+    # --- Find and Rename Thumbnails to Match Final Video Base Name ---
+    for size in ["720X1280"]:
+        # Find any thumbnail ending with the correct size
+        pattern = os.path.join(THUMBNAIL_DIR, f"*_{size}.png")
+        candidates = glob.glob(pattern)
+        # Pick the most recently modified one (assume it's for the latest video)
+        if candidates:
+            latest_thumb = max(candidates, key=os.path.getmtime)
+            # Define the new name to match the video_title
+            new_thumb_name = os.path.join(THUMBNAIL_DIR, f"{video_title}_thumbnail_{size}.png")
+            # If it's not already named correctly, rename it
+            if os.path.abspath(latest_thumb) != os.path.abspath(new_thumb_name):
+                shutil.copy2(latest_thumb, new_thumb_name)
+                print(f"Copied thumbnail {latest_thumb} -> {new_thumb_name}")
+            else:
+                print(f"Thumbnail already named: {new_thumb_name}")
+            thumb_path = new_thumb_name
+        else:
+            print(f"No thumbnail found for size {size}. Skipping.")
+            continue
+
+        # Upload thumbnail to Google Drive
+        if os.path.exists(thumb_path):
+            print(f"Uploading thumbnail: {thumb_path}")
+            thumb_upload_command = [
+                'rclone', 'copy', thumb_path, 'mygdrive:/YouTubevids/', '--progress'
+            ]
+            subprocess.run(thumb_upload_command)
+            print(f"Uploaded thumbnail: {thumb_path}")
+        else:
+            print(f"Thumbnail not found after renaming: {thumb_path}")
+
+    print("All video assets (video, transcript, thumbnails) uploaded to Google Drive.")
+
+    
+def get_next_link():
+    new_links_file = "/home/ubuntu/crewgooglegemini/AUTO/NewPODCASTlinks.txt"
+    
+    if not os.path.exists(new_links_file):
+        return None, None
+    
+    with open(new_links_file, 'r') as file:
+        lines = file.readlines()
+    
+    if not lines:
+        return None, None
+    
+    youtube_link = lines[0].strip()
+    return youtube_link, new_links_file
+
+
+
+from telegram import Bot, InputMediaPhoto
+
+def step_5f_send_to_telegram():
+    # Telegram Bot Configuration
+    BOT_TOKEN = '6157935666:AAESXcHywVwdHZqurjz0kCcVTjzCv50gjlQ'
+    CHAT_ID = '5034393732'
+
+    FINAL_VIDEO_DIR = '/home/ubuntu/crewgooglegemini/PodcastProd/FINALvideo'
+    TRANSCRIPT_PATH = '/home/ubuntu/crewgooglegemini/PodcastProd/current-podcast-script.json'
+    THUMBNAIL_DIR = '/home/ubuntu/crewgooglegemini/CAPTACITY/assets/thumbnails'
+
+    # Find the most recent video file in the FINAL_VIDEO_DIR
+    if not os.path.exists(FINAL_VIDEO_DIR):
+        print(f"Error: Directory {FINAL_VIDEO_DIR} does not exist.")
+        return
+
+    video_files = [f for f in os.listdir(FINAL_VIDEO_DIR) if f.endswith(".mp4")]
+    if not video_files:
+        print("Error: No video files found in the final video directory.")
+        return
+
+    latest_video_file = max(video_files, key=lambda f: os.path.getmtime(os.path.join(FINAL_VIDEO_DIR, f)))
+    video_path = os.path.join(FINAL_VIDEO_DIR, latest_video_file)
+    video_title = os.path.splitext(latest_video_file)[0]
+
+    # Load script from JSON and extract only the "line" text
+    if not os.path.exists(TRANSCRIPT_PATH):
+        print(f"Transcript log file {TRANSCRIPT_PATH} does not exist.")
+        return
+
+    with open(TRANSCRIPT_PATH, 'r', encoding='utf-8') as f:
+        try:
+            data = json.load(f)
+        except json.JSONDecodeError:
+            print(f"Transcript file {TRANSCRIPT_PATH} is not valid JSON.")
+            return
+
+    # Extract just the text from each "line" in the list
+    if isinstance(data, list):
+        script_text = '\n'.join(entry['line'] for entry in data if 'line' in entry)
+    else:
+        script_text = ''
+
+    # Create the transcript file as a .txt
+    transcript_filename = os.path.join(FINAL_VIDEO_DIR, f"{video_title}_transcript.txt")
+    transcript_text = (
+        f"Title: {video_title}\n\n"
+        f"Transcript:\n{script_text}"
+    )
+    with open(transcript_filename, 'w', encoding='utf-8') as tf:
+        tf.write(transcript_text)
+    # --- Find and Rename Thumbnails to Match Final Video Base Name ---
+    thumbnail_paths = []
+    for size in ["720X1280"]:
+        pattern = os.path.join(THUMBNAIL_DIR, f"*_{size}.png")
+        candidates = glob.glob(pattern)
+        if candidates:
+            latest_thumb = max(candidates, key=os.path.getmtime)
+            new_thumb_name = os.path.join(THUMBNAIL_DIR, f"{video_title}_thumbnail_{size}.png")
+            if os.path.abspath(latest_thumb) != os.path.abspath(new_thumb_name):
+                shutil.copy2(latest_thumb, new_thumb_name)
+                print(f"Copied thumbnail {latest_thumb} -> {new_thumb_name}")
+            else:
+                print(f"Thumbnail already named: {new_thumb_name}")
+            thumbnail_paths.append(new_thumb_name)
+        else:
+            print(f"No thumbnail found for size {size}. Skipping.")
+
+    # Send to Telegram
+    asyncio.run(send_telegram_message(
+        BOT_TOKEN, CHAT_ID, video_path, video_title, transcript_text, thumbnail_paths=thumbnail_paths
+    ))
+
+
+async def send_telegram_message(bot_token, chat_id, video_path, video_title, transcript_message, thumbnail_paths=None):
+    try:
+        bot = Bot(token=bot_token)
+
+        # Send the video
+        with open(video_path, 'rb') as video:
+            await bot.send_video(chat_id=chat_id, video=video, caption=f"Video Title: {video_title}")
+
+        # Send the transcript as a text message
+        await bot.send_message(chat_id=chat_id, text=transcript_message)
+
+        # Send thumbnails as a media group if provided
+        if thumbnail_paths:
+            media = []
+            file_handles = []
+            for path in thumbnail_paths:
+                f = open(path, "rb")
+                file_handles.append(f)
+                media.append(InputMediaPhoto(f))
+            await bot.send_media_group(chat_id=chat_id, media=media)
+            for f in file_handles:
+                f.close()
+            print("Thumbnails sent to Telegram.")
+
+        print("Video, transcript, and thumbnails sent successfully to Telegram.")
+
+    except Exception as e:
+        print(f"An error occurred while sending to Telegram: {e}")
+
+
+#=============================================================================================================================================
+#==============================================THUMBNAIL GEN===========================================
+#============================================================================================================
+
+# Your existing code...
+expected_schema2 = {
+    "type": "object",
+    "properties": {
+        "image_prompt": {"type": "string"},
+        "negative_prompt": {"type": "string"},
+        "theme_keywords": {"type": "array", "items": {"type": "string"}}
+    },
+    "required": ["thumbnail_prompt", "negative_prompt", "theme_keywords"]
+}
+
+
+def generate_thumbnail_prompt_purple_cow(full_transcript):
+    """
+    Generates a fully expressive, Purple Cow psychology-driven, niche-agnostic YouTube thumbnail prompt.
+    Dynamically adapts based on script content, including literal, metaphorical, or practical themes.
+    """
+    prompt = f"""
+        You are an elite AI image prompt engineer and YouTube thumbnail strategist.
+        
+        You are provided with the full transcript of the video below.  
+        **Carefully analyze it** to extract the key themes, emotional tone, metaphors, and story tension.  
+        Your thumbnail must be based on this transcript — the overlay text, objects, emotions, and entire visual story must align with the core message of the video.
+        
+        **Video Transcript:**  
+        {full_transcript}
+        
+        Before designing the thumbnail:
+        - If the transcript uses **practical advice** (e.g. about health, finances, driving habits, psychology, etc.), make the thumbnail highly literal and grounded in the topic.
+        - If the transcript contains **metaphors** or narrative devices (like “The Ain’t It Awful Club”), ensure they are referenced in both the overlay text and visuals — OR visually translate the metaphor into a relatable real-world image.
+        - Always make sure the **visuals, objects, and emotional expression directly relate** to the story tension, topic, and tone.
+        - Do NOT use metaphor in the thumbnail if the transcript doesn’t justify it — only use metaphor when supported by script context.
+        
+        **Your output must be a single, Purple Cow-class thumbnail prompt** — so psychologically compelling that viewers STOP scrolling and click instinctively.
+        
+        **Strict requirements:**
+        - The thumbnail must have a 2–5 word, ultra-large, bold overlay text either in whites, yellows, orange, red, or blue.
+        - **Use atleast one curved arrow with color yellow, red or orange or any background contrasting color to point at the object of attention in the thumbnail.**
+        - **Text must be the most prominent element, high-contrast, covering at least 90% of the image area, primarily centered or balanced for visual impact, and use a bold, retro, distressed, vintage, or old-style typewriter font.**
+        - **Text must be a meaningful, curiosity-driven phrase directly related to the video concept and transcript, not generic or random.**
+        - **Text must be on top of all others objects, extra large, readable on mobile, with very high color contrast against the background.**
+        - Include subtle glow or shadow overlays directly behind the text to enhance readability on small mobile screens.
+        
+        **Background and Visual Composition:**
+        - Don't use child images for thumbnails.
+        - Background must use a muted, vintage, or retro color palette and not distract from the text.
+        - Avoid busy or cluttered backgrounds that compete with the text.
+        - Must include at least one or more **metaphorical or symbolic objects** (example: brain, tree, robot, gold coin, DNA, clock, hourglass, lightbulb, key, maze, globe, tire, oil can, speedometer, etc.) that are relevant to the story or concept.
+        - Symbolic objects must harmonize visually — avoid noise or distraction.
+        - Must include a human face or silhouette that expresses an emotion matching the transcript’s key moment (example: calm, awe, frustration, resolve, surprise).
+        - The human face can be blended, transparent, photorealistic or backgrounded — but emotion must be clear and thumbnail-ready.
+        
+        **Overall style:**
+        - Simplicity wins: avoid clutter, keep the message visually direct and easy to grasp in 1 second.
+        - Image must have clear emotional hook or story tension.
+        - Must look cinematic or poster-like — not a generic stock image.
+        - No words like: unlock, dive, or diving.
+        
+        **Output format:** JSON block, nothing else.
+        
+        Your output:
+        - "thumbnail_prompt": A vivid, cinematic image prompt with the above requirements.
+        - "negative_prompt": No facial distortions, no text errors, no blurring, no clutter, no duplicate faces, no disfigured limbs, no extra limbs, no bad anatomy.
+        - "theme_keywords": 3–6 keywords from the prompt.
+        
+        **Example output:**
+        {{
+          "thumbnail_prompt": "Frustrated driver gripping the steering wheel with exaggerated tension. A glowing red speedometer in the background, half-buried oil can in foreground. Extra large, bold distressed text: 'DON’T RUSH DESTRUCTION' in bright yellow, centered over a muted vintage road background. Subtle shadow behind text to enhance legibility.",
+          "negative_prompt": "no facial distortions, no text errors, no blurring, no clutter, no duplicate faces, no disfigured limbs, no extra limbs, no bad anatomy.",
+          "theme_keywords": ["car", "driving", "habits", "emotion", "speed", "oil"]
+        }}
+        """
+
+
+        
+    # Set the Gemini API key you want to use here (overrides any .env key for this block)
+    genai.configure(api_key="AIzaSyAmrfaRZ0EsoeTAb05K8sNPrTyBd7ncNag")
+    
+    # Now create the model and generate content as usual
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    response = model.generate_content(prompt)
+    response_text = response.text
+    
+    json_match = re.search(r'(\{.*\})', response_text, re.DOTALL)
+    if json_match:
+        cleaned_response = json_match.group(1)
+    else:
+        cleaned_response = response_text
+    try:
+        return json.loads(cleaned_response)
+    except json.JSONDecodeError:
+        print("Error: Unable to parse JSON from API response")
+        return {}
+
+
+
+PROMPT_LOG_FILE = "/home/ubuntu/crewgooglegemini/prompt_log.txt"
+
+def generate_thumbnail_image(thumbnail_prompt, width, height, output_path, client_id):
+    # Log the prompt and parameters
+    try:
+        with open(PROMPT_LOG_FILE, "a") as log_file:
+            log_file.write(f"Thumbnail prompt: {thumbnail_prompt['thumbnail_prompt']}\n")
+            log_file.write(f"Negative prompt: {thumbnail_prompt.get('negative_prompt', '')}\n")
+            log_file.write(f"Width: {width}, Height: {height}, Output: {output_path}\n")
+            log_file.write("-" * 40 + "\n")
+    except Exception as e:
+        print(f"Error logging prompt: {e}")
+
+    # Load your workflow template
+    workflow = THUMBNAIL_load_workflow(thumbnail_prompt["thumbnail_prompt"], thumbnail_prompt["negative_prompt"])
+    # Set the width and height for the thumbnail
+    workflow["18"]["inputs"]["width"] = width
+    workflow["18"]["inputs"]["height"] = height
+    # You may also want to set a filename prefix or output path in your workflow if supported
+    # For example, if your workflow supports it:
+    # workflow["84"]["inputs"]["filename_prefix"] = output_path
+    response = IMGqueue_prompt(workflow, client_id)
+    if response and 'prompt_id' in response:
+        ws = websocket.WebSocket()
+        ws_url = f"ws://{SERVER_ADDRESS}/ws?clientId={client_id}"
+        ws.connect(ws_url)
+        images = generate_images(ws, response['prompt_id'])
+        ws.close()
+        # Save the image(s)
+        for node_id, image_list in images.items():
+            for i, image_data in enumerate(image_list):
+                try:
+                    from PIL import Image
+                    import io
+                    image = Image.open(io.BytesIO(image_data))
+                    image.save(output_path)
+                    print(f"Thumbnail saved as {output_path}")
+                except Exception as e:
+                    print(f"Error saving thumbnail: {e}")
+    else:
+        print("Error: Thumbnail prompt could not be queued.")
+
+
+VIDEO_TRANSCRIPT_LOG = "/home/ubuntu/crewgooglegemini/video_transcript_log.txt"
+PROMPT_LOG_FILE = "/home/ubuntu/crewgooglegemini/prompt_log.txt"
+CURRENT_PROMPT_FILE = "/home/ubuntu/crewgooglegemini/current_prompt.json"
+
+def confirm_action(message):
+    response = input(colored(f"{message} (y/n): ", "cyan"))
+    return response.strip().lower() == 'y'
+
+    print(colored("Step 1: Initialize the connection settings.", "cyan"))
+    SERVER_ADDRESS = "54.80.78.81:8253"
+    client_id = str(uuid.uuid4())
+    
+    print(colored(f"Server Address: {SERVER_ADDRESS}", "magenta"))
+    print(colored(f"Generated Client ID: {client_id}", "magenta"))
+
+
+
+
+def get_image(filename, subfolder, folder_type):
+    data = {"filename": filename, "subfolder": subfolder, "type": folder_type}
+    url_values = urllib.parse.urlencode(data)
+
+    print(colored(f"Fetching image from the server: {SERVER_ADDRESS}/view", "cyan"))
+    with urllib.request.urlopen(f"http://{SERVER_ADDRESS}/view?{url_values}") as response:
+        return response.read()
+
+def get_history(prompt_id):
+    print(colored(f"Fetching history for prompt ID: {prompt_id}.", "cyan"))
+    with urllib.request.urlopen(f"http://{SERVER_ADDRESS}/history/{prompt_id}") as response:
+        return json.loads(response.read())
+
+
+def reconnect_websocket():
+    ws = websocket.WebSocket()
+    ws_url = f"ws://{SERVER_ADDRESS}/ws?clientId={client_id}"
+    print(colored(f"Reconnecting WebSocket to {ws_url}", "cyan"))
+    ws.connect(ws_url)
+    return ws
+
+def get_output_images(prompt_id):
+    output_images = {}
+    history = get_history(prompt_id)[prompt_id]
+    for node_id in history['outputs']:
+        node_output = history['outputs'][node_id]
+        if 'images' in node_output:
+            images_output = []
+            for image in node_output['images']:
+                print(colored(f"Downloading image: {image['filename']} from the server.", "yellow"))
+                image_data = get_image(image['filename'], image['subfolder'], image['type'])
+                images_output.append(image_data)
+            output_images[node_id] = images_output
+    return output_images
+#==================================================================
+#REVISED OF THE BELOW
+
+
+def generate_images(ws, prompt_id):
+    output_images = {}
+    last_reported_percentage = 0
+    timeout = 30
+
+    ws.settimeout(timeout)
+    while True:
+        try:
+            out = ws.recv()
+            if isinstance(out, str):
+                message = json.loads(out)
+                if message['type'] == 'progress':
+                    data = message['data']
+                    current_progress = data['value']
+                    max_progress = data['max']
+                    percentage = int((current_progress / max_progress) * 100)
+                    if percentage > last_reported_percentage:
+                        #print(colored(f"Progress: {percentage}% in node {data['node']}", "yellow"))
+                        last_reported_percentage = percentage
+                elif message['type'] == 'executing':
+                    data = message['data']
+                    if data['node'] is None and data['prompt_id'] == prompt_id:
+                        print(colored("Execution complete.", "green"))
+                        return get_output_images(prompt_id)
+        except WebSocketTimeoutException:
+            print(colored(f"No message received for {timeout} seconds. Checking connection...", "yellow"))
+            try:
+                ws.ping()
+            except:
+                ws = reconnect_websocket()
+
+    return output_images
+
+def process_and_generate_images():
+    output_dir = "/home/ubuntu/crewgooglegemini/0001comfy2/outputs"
+    os.makedirs(output_dir, exist_ok=True)
+
+    # Load segment IDs from image_video.json
+    segment_ids = []
+    with open("/home/ubuntu/crewgooglegemini/001videototxt/transcripts/image_video.json", "r", encoding="utf-8") as seg_file:
+        segments_data = json.load(seg_file)
+        segment_ids = [segment["segment_id"] for segment in segments_data]
+
+    print(colored(f"Loaded {len(segment_ids)} segment IDs.", "cyan"))
+
+    # Load current prompts
+    with open(CURRENT_PROMPT_FILE, "r", encoding="utf-8") as f:
+        prompt_data = json.load(f)
+
+    ws = websocket.WebSocket()
+    ws_url = f"ws://{SERVER_ADDRESS}/ws?clientId={client_id}"
+    print(colored(f"Establishing WebSocket connection to {ws_url}", "cyan"))
+    ws.connect(ws_url)
+
+    queued_prompts = []
+    for i, prompt in enumerate(prompt_data):
+        positive_prompt = prompt["image_prompt"]
+        negative_prompt = prompt["negative_prompt"]
+
+        print(colored(f"\nQueuing prompt {i+1}/{len(prompt_data)}", "cyan"))
+
+        workflow = THUMBNAIL_load_workflow(positive_prompt, negative_prompt)
+        response = IMGqueue_prompt(workflow)
+        if response and 'prompt_id' in response:
+            queued_prompts.append((response['prompt_id'], positive_prompt, negative_prompt))
+        
+        time.sleep(1)  # 1 second interval between queueing prompts
+
+    print(colored("All prompts queued. Processing...", "green"))
+
+    for i, (prompt_id, positive_prompt, negative_prompt) in enumerate(queued_prompts):
+        print(colored(f"\nProcessing prompt {i+1}/{len(queued_prompts)}", "cyan"))
+        images = generate_images(ws, prompt_id)
+
+        print(colored("Saving the generated images locally.", "cyan"))
+
+        # Get the corresponding segment_id for this image (based on index)
+        try:
+            segment_id = segment_ids[i]
+        except IndexError:
+            segment_id = f"segment_unknown_{i}"
+            print(colored(f"Warning: No segment_id for prompt {i+1}, using {segment_id}", "red"))
+
+        for node_id, image_list in images.items():
+            for j, image_data in enumerate(image_list):
+                try:
+                    image = Image.open(io.BytesIO(image_data))
+                    # Save image using segment_id only
+                    filename = os.path.join(output_dir, f"{segment_id}.png")
+                    image.save(filename)
+                    print(colored(f"Image saved as {filename}", "blue"))
+                except Exception as e:
+                    print(colored(f"Error processing image: {e}", "red"))
+
+        log_entry = {
+            "segment_id": segment_id,
+            "positive_prompt": positive_prompt,
+            "negative_prompt": negative_prompt,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+        with open(PROMPT_LOG_FILE, "a", encoding="utf-8") as log_file:
+            log_file.write(json.dumps(log_entry, indent=4) + "\n\n")
+
+        print(colored("Prompt and vid transcript logged successfully.", "green"))
+
+    ws.close()
+    print(colored("All prompts processed and images generated.", "green"))
+
+
+def THUMBNAIL_load_workflow(positive_prompt, negative_prompt):
+    with open("/home/ubuntu/crewgooglegemini/0001comfy2/workflow003(API).json", "r", encoding="utf-8") as f:
+        workflow = json.load(f)
+    workflow["4"]["inputs"]["text"] = positive_prompt
+    workflow["5"]["inputs"]["text"] = negative_prompt
+    return workflow
+
+def IMGqueue_prompt(workflow, client_id):
+    p = {"prompt": workflow, "client_id": client_id}
+    data = json.dumps(p, indent=4).encode("utf-8")
+    req = urllib.request.Request(f"http://{SERVER_ADDRESS}/prompt", data=data)
+    print(colored(f"Queuing the prompt for client ID {client_id}.", "cyan"))
+    try:
+        response = json.loads(urllib.request.urlopen(req).read())
+        return response
+    except Exception as e:
+        print(colored(f"Error sending prompt: {e}", "red"))
+        return {}
+
+
+def log_transcript(transcript_text, new_video_title):
+    log_entry = {
+        "video_title": new_video_title,
+        "transcript": transcript_text,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+    }
+    with open(VIDEO_TRANSCRIPT_LOG, "a", encoding="utf-8") as log_file:
+        log_file.write(json.dumps(log_entry, indent=4) + "\n\n")
+# #=====================================================================================
+
+# # Kokoro model and voices file paths (no .env, hardcoded)
+# KOKORO_MODEL_FILE_PATH = "/home/ubuntu/crewgooglegemini/CAPTACITY/assets/kokoro_models/kokoro-v1.0.onnx"
+# KOKORO_VOICES_FILE_PATH = "/home/ubuntu/crewgooglegemini/CAPTACITY/assets/kokoro_models/voices-v1.0.bin"
+
+# # Curated list of major, high-quality Kokoro voices for faceless/narration videos
+# KOKORO_VOICE_POOL = [
+#     # American English - Female
+#     #{"voice": "af_bella",   "lang": "en-us", "speed": 0.92, "label": "US Female, natural, warm"},
+#     {"voice": "af_nicole",  "lang": "en-us", "speed": 0.95, "label": "US Female, clear, modern"},
+#    # {"voice": "af_sarah",   "lang": "en-us", "speed": 0.93, "label": "US Female, expressive"},
+#     # American English - Male
+#     {"voice": "am_fenrir",  "lang": "en-us", "speed": 0.85, "label": "US Male, deep, calm"},
+#     {"voice": "am_michael", "lang": "en-us", "speed": 0.92, "label": "US Male, neutral, clear"},
+#     # British English - Female
+#     {"voice": "bf_emma",    "lang": "en-gb", "speed": 0.85, "label": "UK Female, natural, warm"},
+#     # British English - Male
+#     {"voice": "bm_george",  "lang": "en-gb", "speed": 0.90, "label": "UK Male, neutral, classic"},
+#     {"voice": "bm_fable",   "lang": "en-gb", "speed": 0.92, "label": "UK Male, modern, clear"},
+# ]
+
+# try:
+#     from kokoro_onnx import Kokoro
+#     KOKORO_AVAILABLE = True
+# except ImportError:
+#     KOKORO_AVAILABLE = False
+
+# def generate_audio(
+#     text: str,
+#     output_filename: str,
+#     voice: str = None,
+#     speed: float = None,
+#     lang: str = None
+# ):
+#     """
+#     Generate an audio file from text using Kokoro ONNX.
+#     Picks a random high-quality voice and settings for faceless/narration videos.
+#     """
+#     if not KOKORO_AVAILABLE:
+#         raise RuntimeError("Kokoro TTS is not available. Please install kokoro_onnx.")
+
+#     # Pick a random voice/settings from the curated pool if not specified
+#     if not voice or not speed or not lang:
+#         chosen = random.choice(KOKORO_VOICE_POOL)
+#         voice = chosen["voice"]
+#         speed = chosen["speed"]
+#         lang = chosen["lang"]
+#         print(f"[Kokoro] Using random voice: {voice} ({chosen['label']}), speed={speed}, lang={lang}")
+#     else:
+#         print(f"[Kokoro] Using specified voice: {voice}, speed={speed}, lang={lang}")
+
+#     # Initialize Kokoro with the specified model and voices files
+#     kokoro = Kokoro(KOKORO_MODEL_FILE_PATH, KOKORO_VOICES_FILE_PATH)
+
+#     # Synthesize audio
+#     samples, sample_rate = kokoro.create(
+#         text,
+#         voice=voice,
+#         speed=speed,
+#         lang=lang
+#     )
+
+#     # Save the audio file
+#     import soundfile as sf
+#     sf.write(output_filename, samples, sample_rate)
+#     print(f"Audio generated and saved to {output_filename}")
+
+
+
+
+
+
+async def main():
+    # HARDCODED Gemini API key for this block only
+    GEMINI_API_KEY = "AIzaSyDHeJ9HXJmrJQnbeV4hY6u1rIQcfk65Mlg"
+    genai.configure(api_key=GEMINI_API_KEY)
+
+    VIDEO_TRANSCRIPT_LOG = "/home/ubuntu/crewgooglegemini/PodcastProd/video_transcript_log.txt"
+    transcript_file_for_podcast_gen = '/home/ubuntu/crewgooglegemini/PodcastProd/input_transcripts.json'
+    output_script_path_for_podcast_gen = '/home/ubuntu/crewgooglegemini/PodcastProd/current-podcast-script.json'
+    new_links_file = "/home/ubuntu/crewgooglegemini/AUTO/NewPODCASTlinks.txt"
+    check_links_file = "/home/ubuntu/crewgooglegemini/AUTO/checklink.txt"
+    downloads_folder = "/home/ubuntu/downloads"
+
+    SHORTS_FOLDER = "/home/ubuntu/crewgooglegemini/PodcastProd/Comfyuishorts"
+    BACKGROUND_FOLDER = "/home/ubuntu/crewgooglegemini/PodcastProd/background"
+    OUTPUT_FOLDER = "/home/ubuntu/crewgooglegemini/PodcastProd/FINALvideo"
+    CUSTOM_FOLDER = "/home/ubuntu/crewgooglegemini/PodcastProd/Comfyuishorts"
+    ENDSCREEN_ANIMATIONS_FOLDER = "/home/ubuntu/crewgooglegemini/PodcastProd/Endanim"
+    TEMP_ASSET_FOLDER = "/home/ubuntu/crewgooglegemini/PodcastProd/current-podcast-assets/temp"
+
+    RETRY_DELAY = 10
+    MAX_DELAY = 60
+
+    first_run = True
+    while True:
+        if first_run:
+            print("Choose an option:")
+            print("1: Upload a video/audio file (not implemented here)")
+            print("2: Provide a YouTube link to download a video")
+            print("3: Process next link from Newlinks directory")
+            option = input("Enter 1, 2, or 3: ").strip()
+            first_run = False
+        else:
+            option = "3"
+
+        downloaded_video_path = None
+        youtube_link_current_iteration = None
+
+        if option == "1":
+            print("File upload not implemented in this script. Please choose option 2 or 3.")
+            continue
+        elif option == "2":
+            youtube_link_current_iteration = input("Please paste the YouTube link: ").strip()
+            downloaded_video_path = download_youtube_video(youtube_link_current_iteration, output_path=downloads_folder)
+            if downloaded_video_path is None:
+                print(f"Failed to download video from YouTube: {youtube_link_current_iteration}. Please check the link or try another option.")
+                continue
+            else:
+                print(f"Download successful. File saved as: {downloaded_video_path}")
+        elif option == "3":
+            youtube_link_current_iteration, _ = get_next_link()
+            if youtube_link_current_iteration is None:
+                print("No more links found in Newlinks directory. Exiting.")
+                break
+            downloaded_video_path = download_youtube_video(youtube_link_current_iteration, output_path=downloads_folder)
+            if downloaded_video_path is None:
+                print(f"Failed to download video from {youtube_link_current_iteration}. Moving link to checklink.txt.")
+                with open(check_links_file, 'a') as check_file_obj:
+                    check_file_obj.write(youtube_link_current_iteration + '\n')
+                with open(new_links_file, 'r') as file_obj:
+                    lines = file_obj.readlines()
+                with open(new_links_file, 'w') as file_obj:
+                    file_obj.writelines(lines[1:])
+                await asyncio.sleep(5)
+                continue
+            else:
+                print(f"Download successful. File saved as: {downloaded_video_path}")
+        else:
+            print("Invalid option selected. Exiting.")
+            break
+
+        if downloaded_video_path is None:
+            print("No video to process. Restarting loop.")
+            continue
+
+        print(f"Processing file: {downloaded_video_path}")
+
+        # --- Gemini API key is used only for this upload/transcription block ---
+        print("Uploading file to Gemini...")
+        myfile = genai.upload_file(path=downloaded_video_path)
+
+        print("Waiting for Gemini file to become ACTIVE...")
+        start_time = time.time()
+        file_active = False
+        while True:
+            if hasattr(myfile, 'status'):
+                if myfile.status and isinstance(myfile.status, str) and myfile.status.upper() == "ACTIVE":
+                    print("File is ACTIVE.")
+                    file_active = True
+                    break
+                elif myfile.status:
+                    print(f"Current file status: {myfile.status}. Waiting for file to become ACTIVE...")
+                else:
+                    print(f"File status is None. Waiting...")
+            else:
+                print("No 'status' attribute found on myfile after upload; assuming active with a delay and proceeding cautiously.")
+                await asyncio.sleep(RETRY_DELAY)
+                file_active = True
+                break
+
+            if time.time() - start_time > MAX_DELAY:
+                print(f"File did not become ACTIVE within {MAX_DELAY} seconds. Will attempt to proceed.")
+                file_active = True
+                break
+            await asyncio.sleep(RETRY_DELAY)
+
+        if not file_active:
+            print("File did not become active and processing cannot continue.")
+            if youtube_link_current_iteration:
+                print(f"Consider moving {youtube_link_current_iteration} to checklink.txt")
+            continue
+
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        prompt_for_gemini_transcript = (
+            "Generate a transcript of the speech in this audio/video file. "
+            "Return your response as JSON with two fields: 'title' (a short, catchy video title), "
+            "and 'transcript' (the full transcript). "
+            "Example: {\"title\": \"Why Fake Heads Fooled WWI Snipers\", \"transcript\": \"...\"}"
+        )
+        
+        print("Generating transcript via Gemini...")
+        gemini_transcript_text = None
+        try:
+            result = generate_transcript_with_retries(model, myfile, prompt_for_gemini_transcript, retries=10, delay=RETRY_DELAY)
+            gemini_transcript_text = result.text
+            print("Transcript generated by Gemini.")
+        except Exception as e:
+            print(f"An error occurred during transcript generation with Gemini: {e}")
+            if youtube_link_current_iteration:
+                print("Moving link to checklink.txt and removing from NewPODCASTlinks.txt.")
+                with open(check_links_file, 'a') as check_file_obj:
+                    check_file_obj.write(youtube_link_current_iteration + '\n')
+                with open(new_links_file, 'r') as file_obj:
+                    lines = file_obj.readlines()
+                with open(new_links_file, 'w') as file_obj:
+                    file_obj.writelines(lines[1:])
+                await asyncio.sleep(5)
+            else:
+                print("No youtube_link_current_iteration defined; not moving to checklink.txt.")
+            continue
+        
+        if not gemini_transcript_text:
+            print("Gemini transcript was empty. Skipping further processing for this item.")
+            continue
+        
+        # --- Use robust Gemini parsing helpers ---
+        gemini_title, gemini_transcript = parse_gemini_transcript_response(gemini_transcript_text)
+        
+        # REQUIRE Gemini to have produced a title and transcript, or halt with error
+        if gemini_title is None or gemini_transcript is None:
+            print("Gemini response did not contain a valid title and transcript. Halting. Raw Gemini response below:")
+            print(gemini_transcript_text)
+            raise ValueError("Gemini did not return a valid transcript JSON with title and transcript. Please check the LLM output.")
+
+# ...rest
+        
+        video_title = gemini_title
+        transcript_text = gemini_transcript
+        
+        # Save title and transcript together for downstream use
+        with open(transcript_file_for_podcast_gen, 'w') as f:
+            json.dump({"title": video_title, "transcript": transcript_text}, f, indent=2)
+        
+    
+        # Remove code block markers if present (for Gemini responses)
+        cleaned_gemini_transcript_text = gemini_transcript_text.strip()
+        if cleaned_gemini_transcript_text.startswith("```"):
+            # Remove the first line (```json or ```)
+            cleaned_gemini_transcript_text = "\n".join(cleaned_gemini_transcript_text.splitlines()[1:])
+            # If ends with ```
+            if cleaned_gemini_transcript_text.endswith("```"):
+                cleaned_gemini_transcript_text = "\n".join(cleaned_gemini_transcript_text.splitlines()[:-1])
+        
+        # Save the cleaned transcript
+        gemini_saved_transcript_path = os.path.join(
+            OUTPUT_FOLDER,
+            make_safe_filename(os.path.basename(downloaded_video_path)) + "_gemini_transcript.txt"
+        )
+        with open(gemini_saved_transcript_path, "w", encoding="utf-8") as f:
+            f.write(cleaned_gemini_transcript_text)
+        
+        # Read back just in case
+        with open(transcript_file_for_podcast_gen, 'r') as f:
+            transcript_data_for_podcast = json.load(f)
+        
+        new_video_title = transcript_data_for_podcast["title"]
+        transcript_text_for_podcast_script = transcript_data_for_podcast["transcript"]
+        
+        if not transcript_text_for_podcast_script:
+            print(f"ERROR: 'transcript' key empty in {transcript_file_for_podcast_gen} after writing. Skipping podcast script generation.")
+        else:
+            script_for_podcast_audio = generate_podcast_from_video(transcript_text_for_podcast_script)
+            if new_video_title and script_for_podcast_audio:
+                print(f"Generated Podcast script titled: {new_video_title}")
+                with open(output_script_path_for_podcast_gen, 'w') as f:
+                    json.dump(script_for_podcast_audio, f, indent=2)
+                print(f"Podcast script saved to {output_script_path_for_podcast_gen}")
+                log_transcript(transcript_text_for_podcast_script, new_video_title)
+                print("Podcast script logged successfully.")
+                process_podcast_assets_kokoro()
+                process_podcast_assets_comfyui()
+            else:
+                print("[ERROR] Failed to generate podcast script. Skipping ComfyUI steps, will use downloaded video for overlay if available.")
+        
+        if not os.path.exists(OUTPUT_FOLDER):
+            os.makedirs(OUTPUT_FOLDER)
+
+
+        
+        safe_title_base = make_safe_filename(new_video_title)
+        video_to_caption_path = os.path.join(OUTPUT_FOLDER, "final_youtube_short.mp4")
+        comfyui_shorts_exist = get_sorted_shorts(SHORTS_FOLDER)
+
+        if comfyui_shorts_exist:
+            print("[INFO] ComfyUI shorts found. Proceeding with concatenation and overlay.")
+            success_concat_overlay = concatenate_and_overlay(
+                shorts_folder=SHORTS_FOLDER,
+                background_folder=BACKGROUND_FOLDER,
+                output_folder=OUTPUT_FOLDER
+            )
+            if not success_concat_overlay:
+                print(f"[ERROR] Concatenation and overlay of ComfyUI shorts failed. Cannot proceed with this video.")
+                continue
+        elif os.path.exists(downloaded_video_path) and not comfyui_shorts_exist:
+            print(f"[INFO] No ComfyUI shorts found or podcast script generation failed. Using original downloaded video for processing: {downloaded_video_path}")
+            if os.path.abspath(downloaded_video_path) != os.path.abspath(video_to_caption_path):
+                try:
+                    print(f"Copying {downloaded_video_path} to {video_to_caption_path} to proceed.")
+                    shutil.copy(downloaded_video_path, video_to_caption_path)
+                except Exception as e:
+                    print(f"Failed to copy {downloaded_video_path} to {video_to_caption_path}: {e}")
+                    continue
+        else:
+            print(f"[ERROR] No video source available (neither ComfyUI shorts nor a valid downloaded video at expected path). Cannot proceed.")
+            continue
+
+        if not os.path.exists(video_to_caption_path):
+            print(f"[ERROR] Video for captioning not found: {video_to_caption_path}. Skipping remaining steps.")
+            continue
+
+        transcript_path_for_captions = transcribe_video_with_whisper_auto(OUTPUT_FOLDER, OUTPUT_FOLDER, model="base")
+        video_segments_for_captions = None
+        if transcript_path_for_captions and os.path.exists(transcript_path_for_captions):
+            parsed_transcripts_folder_for_captions = os.path.dirname(transcript_path_for_captions)
+            print(f"[INFO] Loading segments for captions from {parsed_transcripts_folder_for_captions}")
+            video_segments_for_captions = load_video_segments(parsed_transcripts_folder_for_captions)
+        else:
+            print(f"[WARNING] Transcript file for captions was not generated from: {video_to_caption_path}. Proceeding without captions.")
+
+        video_product_for_endscreen = video_to_caption_path
+
+        if video_segments_for_captions:
+            captioned_video_path = os.path.join(OUTPUT_FOLDER, f"{safe_title_base}_with_captions.mp4")
+            print(f"[INFO] Adding captions. Input: {video_to_caption_path}, Output: {captioned_video_path}")
+            add_captions(
+                video_file=video_to_caption_path,
+                output_file=captioned_video_path,
+                font="Bangers-Regular.ttf",
+                font_size=100,
+                font_color="yellow",
+                stroke_width=3,
+                stroke_color="black",
+                highlight_current_word=True,
+                word_highlight_color="red",
+                line_count=2,
+                padding=50,
+                shadow_strength=1.0,
+                shadow_blur=0.1,
+                print_info=True,
+                segments=video_segments_for_captions
+            )
+
+            if os.path.exists(captioned_video_path):
+                print(f"Successfully created captioned video: {captioned_video_path}")
+                if os.path.exists(video_to_caption_path) and video_to_caption_path != captioned_video_path:
+                    print(f"[INFO] Removing intermediate video (non-captioned): {video_to_caption_path}")
+                    os.remove(video_to_caption_path)
+                video_product_for_endscreen = captioned_video_path
+            else:
+                print(f"[ERROR] Captioned video not found at {captioned_video_path}. Using non-captioned video for endscreen step: {video_to_caption_path}")
+        else:
+            print(f"[INFO] No segments for captions. Using non-captioned video for endscreen step: {video_to_caption_path}")
+
+        print(f"Video ready for endscreen processing is at {video_product_for_endscreen}")
+        await asyncio.sleep(2)
+
+        print(f"--- Step 3: Append Endscreen for the video ---")
+        final_video_for_distribution = video_product_for_endscreen
+
+        if not os.path.exists(video_product_for_endscreen):
+            print(f"[ERROR] Video product ({video_product_for_endscreen}) not found. Cannot append endscreen.")
+        else:
+            endscreen_video_file = get_random_endscreen(ENDSCREEN_ANIMATIONS_FOLDER)
+            if endscreen_video_file:
+                current_video_basename = os.path.splitext(os.path.basename(video_product_for_endscreen))[0]
+                base_name_for_final_output = current_video_basename.replace("_with_captions", "").replace("_final_youtube_short", "")
+                final_video_with_endscreen_path = os.path.join(OUTPUT_FOLDER, f"{base_name_for_final_output}_720X1280.mp4")
+
+                print(f"Appending endscreen '{endscreen_video_file}' to '{video_product_for_endscreen}' -> '{final_video_with_endscreen_path}'")
+                append_success = append_endscreen_to_video(
+                    main_video_path=video_product_for_endscreen,
+                    endscreen_video_path=endscreen_video_file,
+                    final_output_path=final_video_with_endscreen_path
+                )
+                if append_success and os.path.exists(final_video_with_endscreen_path):
+                    print(f"Endscreen append successful. New final video: {final_video_with_endscreen_path}")
+                    if os.path.exists(video_product_for_endscreen) and video_product_for_endscreen != final_video_with_endscreen_path:
+                        print(f"Removing video without endscreen: {video_product_for_endscreen}")
+                        os.remove(video_product_for_endscreen)
+                    final_video_for_distribution = final_video_with_endscreen_path
+                else:
+                    print(f"[ERROR] Failed to append endscreen or output file missing. Using previous video: {video_product_for_endscreen}")
+            else:
+                print(f"No endscreen video found/selected in {ENDSCREEN_ANIMATIONS_FOLDER}. Skipping append step.")
+
+        
+        
+        FOLDERS_TO_CLEAR = [
+            "/home/ubuntu/crewgooglegemini/PodcastProd/current-podcast-assets/temp",
+            "/home/ubuntu/crewgooglegemini/PodcastProd/current-podcast-assets",
+            "/home/ubuntu/crewgooglegemini/PodcastProd/Comfyuishorts",
+            # Add more folders here as needed
+        ]
+        
+        for folder in FOLDERS_TO_CLEAR:
+            if os.path.exists(folder):
+                print(f"[INFO] Clearing all files from: {folder}")
+                for file_or_dir in os.listdir(folder):
+                    path_to_remove = os.path.join(folder, file_or_dir)
+                    try:
+                        if os.path.isfile(path_to_remove) or os.path.islink(path_to_remove):
+                            os.remove(path_to_remove)
+                            print(f"[INFO] Removed file: {path_to_remove}")
+                        elif os.path.isdir(path_to_remove):
+                            shutil.rmtree(path_to_remove)
+                            print(f"[INFO] Removed directory: {path_to_remove}")
+                    except Exception as e:
+                        print(f"[WARNING] Could not remove {path_to_remove}: {e}")
+
+        if final_video_for_distribution and os.path.exists(final_video_for_distribution):
+            print(f"Final video for distribution should be at {final_video_for_distribution}")
+        else:
+            print("No final video was successfully produced or retained after all steps.")
+
+        await asyncio.sleep(2)
+
+        print("Processing for one link complete. To process next, remove sys.exit() or restart script.")
+        time.sleep(3)
+                # Step 5d: Generate images for each prompt
+        #print("Step 5d: Generating images for each prompt...")
+        #process_and_generate_images()
+        client_id = str(uuid.uuid4())  # Generate a unique client ID for this run
+
+        print("Step 5e: Generating thumbnail prompt...")
+
+        # Load the transcript from file
+                # Load the transcript from file
+        with open(output_script_path_for_podcast_gen, 'r', encoding='utf-8') as f:
+            script_lines = json.load(f)
+        
+        full_transcript = " ".join([line_obj["line"] for line_obj in script_lines])
+        thumbnail_prompt = generate_thumbnail_prompt_purple_cow(full_transcript)
+
+
+        THUMBNAIL_DIR = "/home/ubuntu/crewgooglegemini/CAPTACITY/assets/thumbnails"
+        os.makedirs(THUMBNAIL_DIR, exist_ok=True)
+        base_name = new_video_title.replace(" ", "_")
+        
+        # Define the output path BEFORE using it
+        output_path_720x1280 = os.path.join(THUMBNAIL_DIR, f"{base_name}_thumbnail_720X1280.png")
+        generate_thumbnail_image(thumbnail_prompt, 720, 1280, output_path_720x1280, client_id)
+        
+        # output_path_720x1280s = os.path.join(THUMBNAIL_DIR, f"{base_name}_thumbnail_720X1280s.png")
+        # generate_thumbnail_image(thumbnail_prompt, 720, 1280, output_path_720x1280s, client_id)
+        
+                
+
+    
+        # Step 5f: Send final video and transcript to Telegram
+        step_5f_send_to_telegram()
+        time.sleep(3)
+
+        # Call step_5g_upload_to_google_drive to upload the latest video and transcript
+        step_5g_upload_to_google_drive()
+        time.sleep(3)
+
+        
+        if option == "3":
+            new_links_file = "/home/ubuntu/crewgooglegemini/AUTO/NewPODCASTlinks.txt"
+            used_links_file = "/home/ubuntu/crewgooglegemini/AUTO/Usedlinks.txt"
+            
+            with open(new_links_file, 'r') as file:
+                lines = file.readlines()
+            
+            if lines:
+                with open(used_links_file, 'a') as used_file:
+                    used_file.write(lines[0])
+                
+                with open(new_links_file, 'w') as new_file:
+                    new_file.writelines(lines[1:])
+                
+                print(f"Moved processed link to Usedlinks.txt")
+                time.sleep(2)
+                clear_output(wait=True)
+                time.sleep(2)
+                
+                final_video_dir = "/home/ubuntu/crewgooglegemini/PodcastProd/FINALvideo"
+                for filename in os.listdir(final_video_dir):
+                    if filename.endswith(".txt") or filename.endswith(".wav"):
+                        file_path = os.path.join(final_video_dir, filename)
+                        try:
+                            os.remove(file_path)
+                            print(f"Deleted: {file_path}")
+                        except Exception as e:
+                            print(f"Error deleting {file_path}: {e}")
+                
+                print("Processing complete. Ready for next iteration.")
+      
+if __name__ == "__main__":
+    try:
+        import nest_asyncio
+        nest_asyncio.apply()
+        try:
+            loop = asyncio.get_event_loop_policy().get_event_loop()
+            if loop.is_closed():
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        loop.run_until_complete(main())
+    except Exception as e:
+        print(f"An error occurred in the main execution: {e}")
+        import traceback
+        traceback.print_exc()
